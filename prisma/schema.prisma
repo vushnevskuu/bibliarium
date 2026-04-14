@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// App user row synced from Supabase Auth (`id` equals `auth.users.id`).
+model User {
+  id                String   @id
+  email             String?  @unique
+  slug              String   @unique
+  displayName       String?
+  avatarUrl         String?
+  authProvider      String?
+  masterProfileJson String?
+  /// When false, `/u/[slug]/ai-profile` and `/api/taste/export` are only for the signed-in owner.
+  aiProfilePublic   Boolean  @default(false)
+  links             Link[]
+  collections       Collection[]
+  createdAt         DateTime @default(now())
+}
+
+model Collection {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  slug      String
+  isPublic  Boolean  @default(false)
+  links     Link[]
+  createdAt DateTime @default(now())
+
+  @@unique([userId, slug])
+  @@index([userId])
+}
+
+model Link {
+  id                String       @id @default(cuid())
+  url               String
+  normalizedUrl     String
+  title             String?
+  description       String?
+  imageUrl          String?
+  faviconUrl        String?
+  siteName          String?
+  domain            String
+  provider          String
+  previewType       String
+  embedHtml         String?
+  embedUrl          String?
+  oEmbedJson        String?
+  tagsJson          String       @default("[]")
+  sortOrder         Int          @default(0)
+  note              String?
+  collectionId      String?
+  collection        Collection?  @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  userId            String
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// When true, `/l/[id]` is readable without a session (read-only).
+  isPublic          Boolean      @default(false)
+  canonicalUrl      String?
+  publishedAt       DateTime?
+  author            String?
+  extractedText     String?
+  aiProfileJson     String?
+  ingestionStatus   String       @default("complete")
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([userId, normalizedUrl])
+  @@index([provider])
+  @@index([collectionId])
+  @@index([userId])
+  @@index([createdAt])
+}

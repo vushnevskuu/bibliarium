@@ -2,26 +2,107 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 0 0% 99%;
+    --foreground: 0 0% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 8%;
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 42%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --destructive: 0 62% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 88%;
+    --ring: 0 0% 8%;
+    --radius: 0.75rem;
   }
-}
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  .dark {
+    --background: 0 0% 6%;
+    --foreground: 0 0% 94%;
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 94%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 52%;
+    --primary: 0 0% 94%;
+    --primary-foreground: 0 0% 8%;
+    --destructive: 0 50% 42%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 18%;
+    --ring: 0 0% 75%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton {
+  @apply relative overflow-hidden bg-muted/90;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--foreground) / 0.05),
+    transparent
+  );
+}
+
+.dark .skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--foreground) / 0.06),
+    transparent
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
+}
+
+/* Note editor: lined field, neutral */
+.sticky-note-lines {
+  background-image: repeating-linear-gradient(
+    transparent 0,
+    transparent 25px,
+    hsl(var(--foreground) / 0.06) 25px,
+    hsl(var(--foreground) / 0.06) 26px
+  );
+  line-height: 26px;
 }

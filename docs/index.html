@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Bibliarium — visual taste board for URLs: masonry previews, AI-readable profiles, JSON and Markdown export. Full app in the GitHub repository."
+    />
+    <title>Bibliarium — Visual taste board</title>
+    <style>
+      :root {
+        --bg: #fafafa;
+        --fg: #141414;
+        --muted: #5c5c5c;
+        --border: #e0e0e0;
+        --card: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f0f0f;
+          --fg: #f0f0f0;
+          --muted: #9a9a9a;
+          --border: #2a2a2a;
+          --card: #161616;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+          Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 44rem;
+        margin: 0 auto;
+        padding: 3rem 1.25rem 4rem;
+      }
+      .badge {
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      h1 {
+        font-size: clamp(1.85rem, 5vw, 2.75rem);
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.12;
+        margin: 0.75rem 0 0;
+      }
+      .lead {
+        margin-top: 1.25rem;
+        font-size: 1.05rem;
+        color: var(--muted);
+        max-width: 36rem;
+      }
+      .card {
+        margin-top: 2rem;
+        padding: 1.25rem 1.35rem;
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        background: var(--card);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+      .card p {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      .actions {
+        margin-top: 2rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+      a.btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.65rem 1.15rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-decoration: none;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border);
+        color: var(--fg);
+        background: var(--card);
+      }
+      a.btn-primary {
+        background: var(--fg);
+        color: var(--bg);
+        border-color: var(--fg);
+      }
+      a.btn:hover {
+        opacity: 0.9;
+      }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border);
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      footer a {
+        color: var(--fg);
+      }
+      code {
+        font-size: 0.85em;
+        padding: 0.1em 0.35em;
+        border-radius: 0.25rem;
+        background: var(--border);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <p class="badge">Bibliarium · GitHub Pages</p>
+      <h1>Visual taste board for links you care about</h1>
+      <p class="lead">
+        This site is the static project page. The full Next.js app (masonry
+        board, Supabase auth, APIs, Prisma) is in the same repository — clone
+        it and run locally, or deploy to Vercel / another Node host.
+      </p>
+      <div class="card">
+        <p>
+          <strong style="color: var(--fg)">Tip:</strong> after enabling GitHub
+          Pages, open the live URL below; links to the repo are filled
+          automatically for <code>user.github.io/repo</code> layouts.
+        </p>
+      </div>
+      <div class="actions">
+        <a class="btn btn-primary" id="repo-link" href="#">View on GitHub</a>
+        <a class="btn" id="readme-link" href="#">README</a>
+      </div>
+      <footer>
+        <p>
+          <a id="issues-link" href="#">Issues</a>
+          · Full product UI at the deployed Next app (not static GitHub Pages).
+        </p>
+      </footer>
+    </div>
+    <script>
+      (function () {
+        var host = document.location.hostname;
+        var segs = document.location.pathname.split("/").filter(Boolean);
+        var base = "https://github.com/";
+        var ownerRepo = null;
+        if (host.endsWith(".github.io")) {
+          var owner = host.replace(/\.github\.io$/i, "");
+          if (segs.length >= 1) ownerRepo = owner + "/" + segs[0];
+        }
+        if (ownerRepo) {
+          var root = base + ownerRepo;
+          var r = document.getElementById("repo-link");
+          var m = document.getElementById("readme-link");
+          var i = document.getElementById("issues-link");
+          if (r) r.href = root;
+          if (m) m.href = root + "#readme";
+          if (i) i.href = root + "/issues";
+        } else {
+          var r2 = document.getElementById("repo-link");
+          if (r2) r2.setAttribute("href", base);
+        }
+      })();
+    </script>
+  </body>
+</html>
