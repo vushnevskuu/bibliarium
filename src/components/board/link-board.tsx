@@ -371,44 +371,56 @@ export function LinkBoard({
                             aria-label="Close menu"
                           />
                           <motion.div
-                            initial={{ opacity: 0, y: -4 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -4 }}
-                            transition={{ duration: 0.12 }}
-                            className="absolute left-0 top-full z-[70] mt-1.5 w-52 rounded-lg border border-border bg-popover py-1 text-sm shadow-lg"
+                            initial={{ opacity: 0, scale: 0.96, y: -6 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: -6 }}
+                            transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                            className="absolute left-0 top-full z-[70] mt-2 w-56 overflow-hidden rounded-xl border border-border bg-background shadow-xl"
                           >
+                            {/* Email header */}
+                            <div className="border-b border-border px-3.5 py-2.5">
+                              <p className="truncate text-[11px] font-medium text-muted-foreground">
+                                {currentEmail}
+                              </p>
+                            </div>
+
                             {currentSlug && (
-                              <>
+                              <div className="p-1">
                                 <button
                                   type="button"
                                   onClick={() => void copyShareLink()}
-                                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-foreground hover:bg-muted/60"
+                                  className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
                                 >
                                   <span>Share profile</span>
-                                  {copyLabel === "share" && (
-                                    <span className="text-[11px] text-muted-foreground">Copied!</span>
-                                  )}
+                                  <span className={cn(
+                                    "text-[11px] text-muted-foreground transition-opacity",
+                                    copyLabel === "share" ? "opacity-100" : "opacity-0"
+                                  )}>Copied!</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => void copyForAI()}
-                                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-foreground hover:bg-muted/60"
+                                  className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
                                 >
                                   <span>Copy for AI</span>
-                                  {copyLabel === "ai" && (
-                                    <span className="text-[11px] text-muted-foreground">Copied!</span>
-                                  )}
+                                  <span className={cn(
+                                    "text-[11px] text-muted-foreground transition-opacity",
+                                    copyLabel === "ai" ? "opacity-100" : "opacity-0"
+                                  )}>Copied!</span>
                                 </button>
-                                <div className="my-1 border-t border-border" />
-                              </>
+                              </div>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => void signOut()}
-                              className="w-full px-3 py-2 text-left text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                            >
-                              Sign out
-                            </button>
+
+                            {/* Sign out */}
+                            <div className="border-t border-border p-1">
+                              <button
+                                type="button"
+                                onClick={() => void signOut()}
+                                className="w-full rounded-lg px-2.5 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                              >
+                                Sign out
+                              </button>
+                            </div>
                           </motion.div>
                         </>
                       )}
