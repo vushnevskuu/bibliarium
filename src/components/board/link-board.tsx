@@ -111,8 +111,7 @@ function shuffleInPlace<T>(items: T[]): T[] {
 
 export function LinkBoard({
   initialLinks,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  currentSlug: _currentSlug,
+  currentSlug,
   currentEmail,
 }: {
   initialLinks: LinkSerialized[];
@@ -130,6 +129,31 @@ export function LinkBoard({
   const [skeletonCount, setSkeletonCount] = React.useState(0);
   const [mixBusy, setMixBusy] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [copyLabel, setCopyLabel] = React.useState<"share" | "ai" | null>(null);
+
+  const flashCopy = (kind: "share" | "ai") => {
+    setCopyLabel(kind);
+    setTimeout(() => setCopyLabel(null), 1800);
+  };
+
+  const copyShareLink = async () => {
+    if (!currentSlug) return;
+    const url = `${window.location.origin}/u/${currentSlug}/ai-profile`;
+    await navigator.clipboard.writeText(url);
+    flashCopy("share");
+    setMenuOpen(false);
+  };
+
+  const copyForAI = async () => {
+    if (!currentSlug) return;
+    try {
+      const res = await fetch(`/api/taste/export?slug=${currentSlug}&format=md`);
+      const text = await res.text();
+      await navigator.clipboard.writeText(text);
+      flashCopy("ai");
+    } catch { /* ignore */ }
+    setMenuOpen(false);
+  };
 
   const refreshLinks = React.useCallback(async () => {
     setLoadingList(true);
@@ -351,12 +375,37 @@ export function LinkBoard({
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -4 }}
                             transition={{ duration: 0.12 }}
-                            className="absolute left-0 top-full z-[70] mt-1.5 w-40 rounded-lg border border-border bg-popover py-1 text-sm shadow-lg"
+                            className="absolute left-0 top-full z-[70] mt-1.5 w-52 rounded-lg border border-border bg-popover py-1 text-sm shadow-lg"
                           >
+                            {currentSlug && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void copyShareLink()}
+                                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-foreground hover:bg-muted/60"
+                                >
+                                  <span>Share profile</span>
+                                  {copyLabel === "share" && (
+                                    <span className="text-[11px] text-muted-foreground">Copied!</span>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void copyForAI()}
+                                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-foreground hover:bg-muted/60"
+                                >
+                                  <span>Copy for AI</span>
+                                  {copyLabel === "ai" && (
+                                    <span className="text-[11px] text-muted-foreground">Copied!</span>
+                                  )}
+                                </button>
+                                <div className="my-1 border-t border-border" />
+                              </>
+                            )}
                             <button
                               type="button"
                               onClick={() => void signOut()}
-                              className="w-full px-3 py-2 text-left text-foreground hover:bg-muted/60"
+                              className="w-full px-3 py-2 text-left text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                             >
                               Sign out
                             </button>
