@@ -474,13 +474,14 @@ export function LinkCard({
   onDelete,
   onPatched,
   onNoteEditorClose,
+  readOnly = false,
 }: {
   link: LinkSerialized;
   onOpen: () => void;
   onDelete: () => void;
   onPatched?: (link: LinkSerialized) => void;
-  /** Вызывается при любом закрытии редактора заметки — сбрасывает модалку превью на доске. */
   onNoteEditorClose?: () => void;
+  readOnly?: boolean;
 }) {
   const [noteOpen, setNoteOpen] = React.useState(false);
 
@@ -516,7 +517,7 @@ export function LinkCard({
           isTelegramEmbed && "[backface-visibility:hidden]"
         )}
       >
-        <div
+        {!readOnly && <div
           className="pointer-events-none absolute right-1 top-1 z-20 flex gap-0 rounded-md border border-border bg-background p-0.5 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
         >
           <a
@@ -559,20 +560,22 @@ export function LinkCard({
           >
             <Trash2 className="h-4 w-4" />
           </button>
-        </div>
+        </div>}
 
-        <NoteEditorDialog
-          open={noteOpen}
-          initialText={link.note ?? ""}
-          onClose={closeNoteEditor}
-          onSave={saveNote}
-        />
+        {!readOnly && (
+          <NoteEditorDialog
+            open={noteOpen}
+            initialText={link.note ?? ""}
+            onClose={closeNoteEditor}
+            onSave={saveNote}
+          />
+        )}
 
         <Media link={link} telegramSrc={telegramSrc} />
         {showBoardLinkMetaStrip(link, isTelegramEmbed) ? (
           <BoardLinkMetaStrip
             link={link}
-            onTitleSave={async (title) => {
+            onTitleSave={readOnly ? undefined : async (title) => {
               const res = await fetch(`/api/links/${link.id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },

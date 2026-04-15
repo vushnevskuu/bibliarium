@@ -138,7 +138,7 @@ export function LinkBoard({
 
   const copyShareLink = async () => {
     if (!currentSlug) return;
-    const url = `${window.location.origin}/u/${currentSlug}/ai-profile`;
+    const url = `${window.location.origin}/u/${currentSlug}`;
     await navigator.clipboard.writeText(url);
     flashCopy("share");
     setMenuOpen(false);
@@ -375,43 +375,26 @@ export function LinkBoard({
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.96, y: -6 }}
                             transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                            className="absolute left-0 top-full z-[70] mt-2 w-56 overflow-hidden rounded-xl border border-border bg-background shadow-xl"
+                            className="absolute left-0 top-full z-[70] mt-2 w-48 overflow-hidden rounded-xl border border-border bg-background shadow-xl"
                           >
-                            {/* Email header */}
-                            <div className="border-b border-border px-3.5 py-2.5">
-                              <p className="truncate text-[11px] font-medium text-muted-foreground">
-                                {currentEmail}
-                              </p>
-                            </div>
-
                             {currentSlug && (
                               <div className="p-1">
                                 <button
                                   type="button"
                                   onClick={() => void copyShareLink()}
-                                  className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
+                                  className="w-full rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
                                 >
-                                  <span>Share profile</span>
-                                  <span className={cn(
-                                    "text-[11px] text-muted-foreground transition-opacity",
-                                    copyLabel === "share" ? "opacity-100" : "opacity-0"
-                                  )}>Copied!</span>
+                                  {copyLabel === "share" ? "Copied!" : "Share profile"}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => void copyForAI()}
-                                  className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
+                                  className="w-full rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
                                 >
-                                  <span>Copy for AI</span>
-                                  <span className={cn(
-                                    "text-[11px] text-muted-foreground transition-opacity",
-                                    copyLabel === "ai" ? "opacity-100" : "opacity-0"
-                                  )}>Copied!</span>
+                                  {copyLabel === "ai" ? "Copied!" : "Copy for AI"}
                                 </button>
                               </div>
                             )}
-
-                            {/* Sign out */}
                             <div className="border-t border-border p-1">
                               <button
                                 type="button"
