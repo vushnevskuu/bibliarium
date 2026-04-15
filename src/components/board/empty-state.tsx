@@ -22,7 +22,7 @@ export function EmptyState({ onSubmit, busy }: Props) {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      className="mx-auto flex max-w-sm flex-col items-center px-6 py-24 text-center"
+      className="fixed inset-0 flex flex-col items-center justify-center px-6 text-center"
     >
       <p className="mb-5 text-sm text-muted-foreground">
         Drop your first link here.
