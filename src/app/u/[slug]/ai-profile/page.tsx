@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { buildTasteExportForSlug } from "@/lib/ai-taste/export-payload";
-import { getAuthenticatedAppUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { requestPublicBaseUrl } from "@/lib/request-public-base";
 
@@ -15,9 +14,7 @@ export default async function AiProfileLandingPage({ params }: Props) {
   });
   if (!user) notFound();
 
-  const ctx = await getAuthenticatedAppUser();
-  const isOwner = ctx?.appUser.id === user.id;
-  if (!user.aiProfilePublic && !isOwner) notFound();
+  // Page is publicly accessible — the user explicitly shares this URL
 
   const built = await buildTasteExportForSlug(params.slug);
   if (!built) notFound();
