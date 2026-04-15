@@ -189,7 +189,7 @@ export function tweetEmbedUrlForTweetId(
   theme: "light" | "dark"
 ): string {
   const t = theme === "dark" ? "dark" : "light";
-  return `https://platform.twitter.com/embed/Tweet.html?id=${tweetId}&theme=${t}&dnt=true`;
+  return `https://platform.twitter.com/embed/Tweet.html?id=${tweetId}&theme=${t}&dnt=true&conversation=none`;
 }
 
 export function tweetEmbedIframeSrc(

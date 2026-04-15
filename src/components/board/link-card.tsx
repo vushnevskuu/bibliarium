@@ -29,6 +29,60 @@ function hashHue(domain: string): number {
   return h;
 }
 
+function showBoardLinkMetaStrip(
+  link: LinkSerialized,
+  isTelegramEmbed: boolean,
+): boolean {
+  if (isTelegramEmbed) return false;
+  if (link.provider === "youtube") return false;
+  if (link.provider === "twitter") return false;
+  if (link.provider === "telegram") return false;
+  return true;
+}
+
+function BoardLinkMetaStrip({ link }: { link: LinkSerialized }) {
+  const primary = (link.title?.trim() || link.domain).trim() || "Link";
+  const site = link.siteName?.trim();
+  const siteLine =
+    site && site.toLowerCase() !== link.domain.toLowerCase()
+      ? `${site} · ${link.domain}`
+      : link.domain;
+  const showDescription =
+    (link.provider === "web" || link.provider === "article") &&
+    Boolean(link.description?.trim());
+
+  return (
+    <div className="pointer-events-none border-t border-border bg-muted/25 px-3 py-2.5 text-left">
+      <div className="flex gap-2.5">
+        {link.faviconUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- remote favicon URLs
+          <img
+            src={link.faviconUrl}
+            alt=""
+            className="mt-0.5 h-4 w-4 shrink-0 rounded-sm opacity-90"
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+          />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+            {primary}
+          </p>
+          <p className="mt-0.5 truncate text-[11px] leading-tight text-muted-foreground">
+            {siteLine}
+          </p>
+          {showDescription && link.description ? (
+            <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground/90">
+              {link.description.trim()}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function youtubeIframeSrc(link: LinkSerialized): string | null {
   if (link.embedUrl) return link.embedUrl;
   try {
@@ -99,6 +153,7 @@ function Media({
             alt=""
             loading="lazy"
             decoding="async"
+            referrerPolicy="no-referrer"
             className="h-full w-full object-cover"
           />
         ) : null}
@@ -188,6 +243,7 @@ function Media({
           alt=""
           loading="lazy"
           decoding="async"
+          referrerPolicy="no-referrer"
           className="max-h-[320px] w-full object-cover"
         />
       </div>
@@ -203,6 +259,7 @@ function Media({
           alt=""
           loading="lazy"
           decoding="async"
+          referrerPolicy="no-referrer"
           className="h-full w-full object-cover"
         />
       </div>
@@ -377,7 +434,7 @@ export function LinkCard({
   };
 
   return (
-    <article className="group w-full min-w-0 break-inside-avoid">
+    <article className="group inline-block w-full max-w-full min-w-0 align-top break-inside-avoid">
       <div
         role="button"
         tabIndex={0}
@@ -446,6 +503,9 @@ export function LinkCard({
         />
 
         <Media link={link} telegramSrc={telegramSrc} />
+        {showBoardLinkMetaStrip(link, isTelegramEmbed) ? (
+          <BoardLinkMetaStrip link={link} />
+        ) : null}
 
         {link.note ? (
           <div

@@ -104,7 +104,7 @@ export function LinkBoard({
   const onSubmit = async (url: string) => {
     setError(null);
     setBusy(true);
-    setSkeletonCount(2);
+    setSkeletonCount(1);
 
     const postLink = () =>
       fetch("/api/links", {
@@ -230,18 +230,24 @@ export function LinkBoard({
         <div className="mb-8 min-w-0">
           <div className="flex w-full min-w-0 items-center justify-between gap-3">
             {/* Left: title • count • email */}
-            <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-muted-foreground">
-              <span className="font-semibold text-foreground text-base">Bibliarium</span>
-              <span className="select-none" aria-hidden>•</span>
+            <div className="flex min-w-0 items-center gap-x-2 text-[18px] font-medium leading-snug tracking-tight text-muted-foreground sm:gap-x-3">
+              <h1 className="m-0 inline p-0 text-[18px] font-semibold leading-snug tracking-tight text-foreground">
+                Bibliarium
+              </h1>
+              <span className="select-none" aria-hidden>
+                •
+              </span>
               <span>{links.length} card{links.length === 1 ? "" : "s"}</span>
               {currentEmail ? (
                 <>
-                  <span className="select-none" aria-hidden>•</span>
+                  <span className="select-none" aria-hidden>
+                    •
+                  </span>
                   <div className="relative">
                     <button
                       type="button"
                       onClick={() => setMenuOpen((o) => !o)}
-                      className="truncate max-w-[200px] hover:text-foreground transition-colors"
+                      className="max-w-[min(100%,280px)] truncate border-0 bg-transparent p-0 text-left text-[18px] font-medium leading-snug tracking-tight text-muted-foreground transition-colors hover:text-foreground"
                     >
                       {currentEmail}
                     </button>
@@ -284,7 +290,7 @@ export function LinkBoard({
                 onClick={() => void onMix()}
                 disabled={links.length < 2 || mixBusy || loadingList}
                 className={cn(
-                  "text-sm text-muted-foreground transition-colors hover:text-foreground underline-offset-4 hover:underline",
+                  "text-[18px] font-medium leading-snug tracking-tight text-muted-foreground transition-colors hover:text-foreground underline-offset-4 hover:underline",
                   "disabled:pointer-events-none disabled:opacity-30"
                 )}
               >
@@ -346,24 +352,38 @@ export function LinkBoard({
         {!loadingList && links.length === 0 ? (
           <EmptyState onSubmit={onSubmit} busy={busy} />
         ) : (
-          <div className="columns-[300px] gap-5">
-            {loadingList && links.length === 0
-              ? Array.from({ length: 6 }, (_, i) => (
-                  <div key={i} className="mb-5 break-inside-avoid">
-                    <CardSkeleton />
-                  </div>
-                ))
-              : links.map((link) => (
-                  <div key={link.id} className="mb-5 break-inside-avoid">
+          <div className="columns-[300px] gap-5 [column-fill:auto]">
+            {loadingList && links.length === 0 ? (
+              Array.from({ length: 6 }, (_, i) => (
+                <div
+                  key={i}
+                  className="mb-5 inline-block w-full max-w-full align-top break-inside-avoid"
+                >
+                  <CardSkeleton />
+                </div>
+              ))
+            ) : (
+              <>
+                {busy && skeletonCount > 0
+                  ? Array.from({ length: skeletonCount }, (_, i) => (
+                      <div
+                        key={`skm-${i}`}
+                        className="mb-5 inline-block w-full max-w-full align-top break-inside-avoid"
+                      >
+                        <CardSkeleton />
+                      </div>
+                    ))
+                  : null}
+                {links.map((link) => (
+                  <div
+                    key={link.id}
+                    className="mb-5 inline-block w-full max-w-full align-top break-inside-avoid"
+                  >
                     <LinkCard {...cardProps(link)} />
                   </div>
                 ))}
-            {busy &&
-              Array.from({ length: skeletonCount || 1 }, (_, i) => (
-                <div key={`skm-${i}`} className="mb-5 break-inside-avoid">
-                  <CardSkeleton />
-                </div>
-              ))}
+              </>
+            )}
           </div>
         )}
       </main>

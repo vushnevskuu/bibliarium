@@ -27,6 +27,28 @@ function parseTweetEmbedResizeHeight(data: unknown): number | null {
 
 const LOADING_MIN_PX = 40;
 
+function resizeMessageTargetsIframe(
+  iframe: HTMLIFrameElement | null,
+  source: MessageEventSource | null,
+): boolean {
+  const root = iframe?.contentWindow;
+  if (!root || !source) return false;
+  if (source === root) return true;
+  if (typeof source !== "object" || !("parent" in source)) return false;
+  let w: Window | null = source as Window;
+  for (let depth = 0; depth < 16 && w; depth++) {
+    if (w === root) return true;
+    try {
+      const parentWin: Window | null = w.parent;
+      if (!parentWin || parentWin === w) break;
+      w = parentWin;
+    } catch {
+      break;
+    }
+  }
+  return false;
+}
+
 export function TwitterEmbedIframe({
   src,
   title,
@@ -37,6 +59,7 @@ export function TwitterEmbedIframe({
   /** Extra classes on the outer clip wrapper (border, theme bg, etc.). */
   className?: string;
 }) {
+  const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const [heightPx, setHeightPx] = React.useState<number | null>(null);
 
   React.useEffect(() => {
@@ -46,6 +69,7 @@ export function TwitterEmbedIframe({
   React.useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (!TWITTER_EMBED_ORIGINS.has(event.origin)) return;
+      if (!resizeMessageTargetsIframe(iframeRef.current, event.source)) return;
       const h = parseTweetEmbedResizeHeight(event.data);
       if (h) setHeightPx(h);
     };
@@ -61,6 +85,7 @@ export function TwitterEmbedIframe({
       style={{ height: h }}
     >
       <iframe
+        ref={iframeRef}
         title={title}
         src={src}
         className="pointer-events-auto block w-full min-w-0 max-w-full border-0 align-top bg-transparent"
