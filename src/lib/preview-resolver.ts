@@ -252,7 +252,22 @@ export async function resolvePreview(rawInput: string): Promise<ResolvedPreview>
 
   const htmlRes = await safeFetch(url.toString(), { method: "GET" });
   if (!htmlRes.ok) {
-    throw new Error(`Server responded with status ${htmlRes.status}`);
+    // Return a minimal fallback so the link is saved even if the page blocks our bot
+    return {
+      url: url.toString(),
+      normalizedUrl: url.toString(),
+      domain,
+      title: domain,
+      description: null,
+      imageUrl: null,
+      faviconUrl,
+      siteName: null,
+      provider,
+      previewType: "fallback" as PreviewType,
+      embedHtml: null,
+      embedUrl: null,
+      oEmbedJson: null,
+    };
   }
   const contentType = htmlRes.headers.get("content-type") || "";
   if (contentType.startsWith("image/")) {

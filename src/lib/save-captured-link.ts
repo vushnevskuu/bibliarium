@@ -81,12 +81,28 @@ export async function saveCapturedLinkForUser(
   let preview;
   try {
     preview = await resolvePreview(rawUrl);
-  } catch (e) {
-    const msg =
-      e instanceof Error
-        ? e.message
-        : "Could not fetch a preview for this URL";
-    return { ok: false, status: 422, error: msg };
+  } catch {
+    // If preview fetch fails entirely (network error, bot block, timeout),
+    // save the link with minimal metadata rather than rejecting it.
+    let domain = "";
+    try {
+      domain = new URL(normalizedUrl).hostname.replace(/^www\./, "");
+    } catch { /* ignore */ }
+    preview = {
+      url: normalizedUrl,
+      normalizedUrl,
+      domain,
+      title: titleHint?.trim() || domain || null,
+      description: null,
+      imageUrl: null,
+      faviconUrl: faviconHint ?? null,
+      siteName: null,
+      provider: "web" as const,
+      previewType: "fallback" as const,
+      embedHtml: null,
+      embedUrl: null,
+      oEmbedJson: null,
+    };
   }
 
   const title =

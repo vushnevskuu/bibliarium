@@ -107,9 +107,11 @@ export async function safeFetch(
         redirect: "manual",
         signal: controller.signal,
         headers: {
-          "User-Agent": "BibliariumPreview/1.0",
+          "User-Agent":
+            "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
           Accept:
-            "text/html,application/xhtml+xml,application/json;q=0.9,image/*;q=0.8,*/*;q=0.7",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
           ...fetchInit.headers,
         },
       });
