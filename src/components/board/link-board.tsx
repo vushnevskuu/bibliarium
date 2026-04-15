@@ -249,6 +249,38 @@ export function LinkBoard({
     }
   };
 
+  // Ctrl+V / Cmd+V anywhere on the page — paste URL directly without opening the add form
+  const onSubmitRef = React.useRef(onSubmit);
+  React.useLayoutEffect(() => { onSubmitRef.current = onSubmit; });
+  const busyRef = React.useRef(busy);
+  React.useLayoutEffect(() => { busyRef.current = busy; }, [busy]);
+
+  React.useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      // Skip when user is focused inside any input / textarea / contenteditable
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        (el instanceof HTMLElement && el.isContentEditable)
+      ) return;
+
+      if (busyRef.current) return;
+
+      const text = (e.clipboardData?.getData("text") ?? "").trim();
+      if (!text) return;
+
+      const hasProto = /^https?:\/\//i.test(text);
+      const looksLikeUrl = hasProto || /^([\w-]+\.)+[\w]{2,}/i.test(text);
+      if (!looksLikeUrl) return;
+
+      void onSubmitRef.current(hasProto ? text : `https://${text}`);
+    };
+
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, []);
+
   const onDelete = async (id: string) => {
     setLinks((prev) => prev.filter((l) => l.id !== id));
     try {
