@@ -25,7 +25,7 @@ function parseTweetEmbedResizeHeight(data: unknown): number | null {
   return Math.min(Math.round(h), 8000);
 }
 
-const LOADING_MIN_PX = 280;
+const LOADING_MIN_PX = 40;
 
 export function TwitterEmbedIframe({
   src,
@@ -53,16 +53,18 @@ export function TwitterEmbedIframe({
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
+  const h = heightPx ?? LOADING_MIN_PX;
+
   return (
     <div
-      className={cn("relative w-full min-w-0", className)}
-      style={{ height: heightPx ?? LOADING_MIN_PX }}
+      className={cn("relative w-full min-w-0 bg-transparent transition-[height] duration-150", className)}
+      style={{ height: h }}
     >
       <iframe
         title={title}
         src={src}
-        className="pointer-events-auto block w-full min-w-0 max-w-full border-0 align-top"
-        style={{ height: heightPx ?? LOADING_MIN_PX, maxHeight: "none" }}
+        className="pointer-events-auto block w-full min-w-0 max-w-full border-0 align-top bg-transparent"
+        style={{ height: h, maxHeight: "none" }}
         loading="lazy"
         referrerPolicy="strict-origin-when-cross-origin"
         allow="fullscreen"

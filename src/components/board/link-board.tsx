@@ -231,21 +231,21 @@ export function LinkBoard({
         {!loadingList && links.length === 0 ? (
           <EmptyState onSubmit={onSubmit} busy={busy} />
         ) : (
-          <div className="columns-[300px] gap-2">
+          <div className="columns-[300px] gap-5">
             {loadingList && links.length === 0
               ? Array.from({ length: 6 }, (_, i) => (
-                  <div key={i} className="mb-2 break-inside-avoid">
+                  <div key={i} className="mb-5 break-inside-avoid">
                     <CardSkeleton />
                   </div>
                 ))
               : links.map((link) => (
-                  <div key={link.id} className="mb-2 break-inside-avoid">
+                  <div key={link.id} className="mb-5 break-inside-avoid">
                     <LinkCard {...cardProps(link)} />
                   </div>
                 ))}
             {busy &&
               Array.from({ length: skeletonCount || 1 }, (_, i) => (
-                <div key={`skm-${i}`} className="mb-2 break-inside-avoid">
+                <div key={`skm-${i}`} className="mb-5 break-inside-avoid">
                   <CardSkeleton />
                 </div>
               ))}
