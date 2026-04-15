@@ -30,8 +30,11 @@ export function EmptyState({ onSubmit, busy, error }: Props) {
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       className="fixed inset-0 flex flex-col items-center justify-center text-center"
     >
-      <p className="mb-5 text-sm text-muted-foreground">
+      <p className="mb-1.5 text-sm text-muted-foreground">
         Drop your first link here.
+      </p>
+      <p className="mb-5 text-xs text-muted-foreground/50">
+        After that — just Ctrl+V anywhere on the page.
       </p>
 
       <form onSubmit={handleSubmit} className="flex w-full max-w-[340px] gap-2">
