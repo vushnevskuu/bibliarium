@@ -4,12 +4,6 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { LinkSerialized } from "@/types/link";
 import { cn } from "@/lib/utils";
-import {
-  distributeByWeight,
-  estimateLinkCardHeight,
-  estimateSkeletonSlotWeight,
-  getMasonryColumnCount,
-} from "@/lib/masonry-pack";
 import { UserMenu } from "@/components/auth/user-menu";
 import { TopBar } from "./top-bar";
 import { LinkCard } from "./link-card";
@@ -31,43 +25,6 @@ async function parseError(res: Response): Promise<string> {
   return `Request failed (${res.status})`;
 }
 
-const MASONRY_BREAKPOINT_COLS = {
-  default: 4,
-  1280: 3,
-  900: 2,
-  560: 1,
-};
-
-function useMasonryColumnCount(
-  breakpointCols: typeof MASONRY_BREAKPOINT_COLS
-): number {
-  const [columnCount, setColumnCount] = React.useState(() =>
-    typeof window !== "undefined"
-      ? getMasonryColumnCount(window.innerWidth, breakpointCols)
-      : breakpointCols.default
-  );
-
-  React.useLayoutEffect(() => {
-    const update = () => {
-      setColumnCount(
-        getMasonryColumnCount(window.innerWidth, breakpointCols)
-      );
-    };
-    update();
-    let raf = 0;
-    const onResize = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(update);
-    };
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      cancelAnimationFrame(raf);
-    };
-  }, [breakpointCols]);
-
-  return columnCount;
-}
 
 function shuffleInPlace<T>(items: T[]): T[] {
   const a = [...items];
@@ -230,42 +187,6 @@ export function LinkBoard({
     },
   });
 
-  const columnCount = useMasonryColumnCount(MASONRY_BREAKPOINT_COLS);
-
-  const linkById = React.useMemo(() => {
-    const m = new Map<string, LinkSerialized>();
-    for (const l of links) m.set(l.id, l);
-    return m;
-  }, [links]);
-
-  const skeletonOnlyPacked = React.useMemo(
-    () =>
-      distributeByWeight(
-        Array.from({ length: 6 }, (_, i) => {
-          const key = `sk-init-${i}`;
-          return { key, weight: estimateSkeletonSlotWeight(key) };
-        }),
-        columnCount
-      ),
-    [columnCount]
-  );
-
-  const packedBoard = React.useMemo(() => {
-    const items: { key: string; weight: number }[] = [];
-    if (busy && skeletonCount > 0) {
-      for (let i = 0; i < skeletonCount; i++) {
-        const key = `skm-${i}`;
-        items.push({ key, weight: estimateSkeletonSlotWeight(key) });
-      }
-    }
-    for (const link of links) {
-      items.push({
-        key: link.id,
-        weight: estimateLinkCardHeight(link),
-      });
-    }
-    return distributeByWeight(items, columnCount);
-  }, [busy, skeletonCount, links, columnCount]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -307,44 +228,27 @@ export function LinkBoard({
           </button>
         </div>
 
-        {loadingList && links.length === 0 ? (
-          <div className="flex min-w-0 w-auto items-start -ml-2">
-            {skeletonOnlyPacked.map((keys, colIdx) => (
-              <div
-                key={colIdx}
-                className="min-w-0 flex-[1_1_0%] pl-2"
-              >
-                {keys.map((key) => (
-                  <div key={key} className="mb-2">
-                    <CardSkeleton />
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        ) : !loadingList && links.length === 0 ? (
+        {!loadingList && links.length === 0 ? (
           <EmptyState onSubmit={onSubmit} busy={busy} />
         ) : (
-          <div className="flex min-w-0 w-auto items-start -ml-2">
-            {packedBoard.map((keys, colIdx) => (
-              <div
-                key={colIdx}
-                className="min-w-0 flex-[1_1_0%] pl-2"
-              >
-                {keys.map((key) => {
-                  const link = linkById.get(key);
-                  return (
-                    <div key={key} className="mb-2">
-                      {key.startsWith("skm-") ? (
-                        <CardSkeleton />
-                      ) : link ? (
-                        <LinkCard {...cardProps(link)} />
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+          <div className="columns-[300px] gap-2">
+            {loadingList && links.length === 0
+              ? Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="mb-2 break-inside-avoid">
+                    <CardSkeleton />
+                  </div>
+                ))
+              : links.map((link) => (
+                  <div key={link.id} className="mb-2 break-inside-avoid">
+                    <LinkCard {...cardProps(link)} />
+                  </div>
+                ))}
+            {busy &&
+              Array.from({ length: skeletonCount || 1 }, (_, i) => (
+                <div key={`skm-${i}`} className="mb-2 break-inside-avoid">
+                  <CardSkeleton />
+                </div>
+              ))}
           </div>
         )}
       </main>
