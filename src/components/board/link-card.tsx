@@ -389,9 +389,8 @@ export function LinkCard({
           }
         }}
         className={cn(
-          "relative cursor-pointer overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-foreground/15 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20",
-          isTelegramEmbed &&
-            "overflow-clip [backface-visibility:hidden]"
+          "relative cursor-pointer rounded-2xl border border-border bg-card transition-colors hover:border-foreground/15 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 overflow-clip",
+          isTelegramEmbed && "[backface-visibility:hidden]"
         )}
       >
         <div

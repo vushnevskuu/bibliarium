@@ -55,20 +55,14 @@ export function TwitterEmbedIframe({
 
   return (
     <div
-      className={cn(
-        "relative w-full min-w-0 overflow-hidden bg-black",
-        className
-      )}
+      className={cn("relative w-full min-w-0", className)}
+      style={{ height: heightPx ?? LOADING_MIN_PX }}
     >
       <iframe
         title={title}
         src={src}
         className="pointer-events-auto block w-full min-w-0 max-w-full border-0 align-top"
-        style={
-          heightPx != null
-            ? { height: heightPx, maxHeight: "none" }
-            : { minHeight: LOADING_MIN_PX }
-        }
+        style={{ height: heightPx ?? LOADING_MIN_PX, maxHeight: "none" }}
         loading="lazy"
         referrerPolicy="strict-origin-when-cross-origin"
         allow="fullscreen"
