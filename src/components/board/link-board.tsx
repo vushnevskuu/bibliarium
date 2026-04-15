@@ -352,13 +352,10 @@ export function LinkBoard({
         {!loadingList && links.length === 0 ? (
           <EmptyState onSubmit={onSubmit} busy={busy} />
         ) : (
-          <div className="columns-[300px] gap-5 [column-fill:auto]">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-5">
             {loadingList && links.length === 0 ? (
               Array.from({ length: 6 }, (_, i) => (
-                <div
-                  key={i}
-                  className="mb-5 inline-block w-full max-w-full align-top break-inside-avoid"
-                >
+                <div key={i}>
                   <CardSkeleton />
                 </div>
               ))
@@ -366,19 +363,13 @@ export function LinkBoard({
               <>
                 {busy && skeletonCount > 0
                   ? Array.from({ length: skeletonCount }, (_, i) => (
-                      <div
-                        key={`skm-${i}`}
-                        className="mb-5 inline-block w-full max-w-full align-top break-inside-avoid"
-                      >
+                      <div key={`skm-${i}`}>
                         <CardSkeleton />
                       </div>
                     ))
                   : null}
                 {links.map((link) => (
-                  <div
-                    key={link.id}
-                    className="mb-5 inline-block w-full max-w-full align-top break-inside-avoid"
-                  >
+                  <div key={link.id}>
                     <LinkCard {...cardProps(link)} />
                   </div>
                 ))}

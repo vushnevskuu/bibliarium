@@ -434,7 +434,7 @@ export function LinkCard({
   };
 
   return (
-    <article className="group inline-block w-full max-w-full min-w-0 align-top break-inside-avoid">
+    <article className="group w-full min-w-0">
       <div
         role="button"
         tabIndex={0}
