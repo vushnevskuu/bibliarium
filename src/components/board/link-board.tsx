@@ -11,6 +11,28 @@ import { LinkCard } from "./link-card";
 import { EmptyState } from "./empty-state";
 import { CardSkeleton } from "./card-skeleton";
 
+/** Measures how many columns fit in the container and updates on resize. */
+function useMasonryCols(
+  containerRef: React.RefObject<HTMLDivElement>,
+  minColWidth = 300,
+  gap = 20,
+) {
+  const [cols, setCols] = React.useState(1);
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const n = Math.max(1, Math.floor((el.offsetWidth + gap) / (minColWidth + gap)));
+      setCols(n);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [containerRef, minColWidth, gap]);
+  return cols;
+}
+
 const SCRAMBLE_CHARS = "abcdefghijklmnopqrstuvwxyz";
 
 function useTextScramble(text: string, duration = 650) {
@@ -87,6 +109,8 @@ export function LinkBoard({
 }) {
   const router = useRouter();
   const { display: shuffleLabel, trigger: triggerScramble } = useTextScramble("shuffle");
+  const gridRef = React.useRef<HTMLDivElement>(null);
+  const numCols = useMasonryCols(gridRef);
   const [links, setLinks] = React.useState<LinkSerialized[]>(initialLinks);
   const [busy, setBusy] = React.useState(false);
   const [loadingList, setLoadingList] = React.useState(false);
@@ -392,34 +416,38 @@ export function LinkBoard({
           </AnimatePresence>
         </div>
 
-        {/* Initial loading */}
-        {loadingList && links.length === 0 && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-5">
-            {Array.from({ length: 6 }, (_, i) => (
-              <div key={i}><CardSkeleton /></div>
-            ))}
-          </div>
-        )}
+        {/* Masonry container — always mounted so ResizeObserver can measure */}
+        <div ref={gridRef} className="flex items-start gap-5">
+          {(() => {
+            // Build flat item list: loading skeletons OR (add-skeleton + cards)
+            const items: React.ReactNode[] = loadingList && links.length === 0
+              ? Array.from({ length: 6 }, (_, i) => <CardSkeleton key={`ls-${i}`} />)
+              : [
+                  ...(busy && skeletonCount > 0
+                    ? Array.from({ length: skeletonCount }, (_, i) => <CardSkeleton key={`skm-${i}`} />)
+                    : []),
+                  ...links.map((link) => (
+                    <LinkCard key={link.id} {...cardProps(link)} />
+                  )),
+                ];
 
-        {/* Empty state — shown when not loading and no links yet, including while first link is being added */}
-        {!loadingList && links.length === 0 && (
-          <EmptyState onSubmit={onSubmit} busy={busy} error={error} />
-        )}
+            if (items.length === 0) return null;
 
-        {/* Grid — shown as soon as there is at least one link */}
-        {links.length > 0 && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-5">
-            {busy && skeletonCount > 0
-              ? Array.from({ length: skeletonCount }, (_, i) => (
-                  <div key={`skm-${i}`}><CardSkeleton /></div>
-                ))
-              : null}
-            {links.map((link) => (
-              <div key={link.id}>
-                <LinkCard {...cardProps(link)} />
+            // Distribute round-robin across columns
+            const columns: React.ReactNode[][] = Array.from({ length: numCols }, () => []);
+            items.forEach((item, i) => columns[i % numCols].push(item));
+
+            return columns.map((col, ci) => (
+              <div key={ci} className="flex flex-1 flex-col gap-5 min-w-0">
+                {col}
               </div>
-            ))}
-          </div>
+            ));
+          })()}
+        </div>
+
+        {/* Empty state — outside masonry so it can be fixed-centered */}
+        {!loadingList && links.length === 0 && !busy && (
+          <EmptyState onSubmit={onSubmit} busy={busy} error={error} />
         )}
       </main>
 
