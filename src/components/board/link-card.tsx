@@ -35,7 +35,13 @@ function showBoardLinkMetaStrip(
   return true;
 }
 
-function BoardLinkMetaStrip({ link }: { link: LinkSerialized }) {
+function BoardLinkMetaStrip({
+  link,
+  onTitleSave,
+}: {
+  link: LinkSerialized;
+  onTitleSave?: (title: string) => Promise<void>;
+}) {
   const primary = (link.title?.trim() || link.domain).trim() || "Link";
   const site = link.siteName?.trim();
   const siteLine =
@@ -46,8 +52,42 @@ function BoardLinkMetaStrip({ link }: { link: LinkSerialized }) {
     (link.provider === "web" || link.provider === "article") &&
     Boolean(link.description?.trim());
 
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(primary);
+  const [saving, setSaving] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const startEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setDraft(primary);
+    setEditing(true);
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  };
+
+  const commit = async () => {
+    const value = draft.trim();
+    if (!value || value === primary) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await onTitleSave?.(value);
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") { e.preventDefault(); void commit(); }
+    if (e.key === "Escape") { setEditing(false); }
+    e.stopPropagation();
+  };
+
   return (
-    <div className="pointer-events-none border-t border-border bg-muted/25 px-3 py-2.5 text-left">
+    <div className="border-t border-border bg-muted/25 px-3 py-2.5 text-left">
       <div className="flex gap-2.5">
         {link.faviconUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- remote favicon URLs
@@ -61,9 +101,27 @@ function BoardLinkMetaStrip({ link }: { link: LinkSerialized }) {
           />
         ) : null}
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
-            {primary}
-          </p>
+          {editing ? (
+            <input
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => void commit()}
+              onKeyDown={onKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              disabled={saving}
+              className="w-full rounded border border-border bg-background px-1.5 py-0.5 text-sm font-medium leading-snug text-foreground outline-none focus:border-foreground/30 disabled:opacity-60"
+            />
+          ) : (
+            <p
+              className="line-clamp-2 cursor-text text-sm font-medium leading-snug text-foreground"
+              title="Double-click to edit title"
+              onDoubleClick={startEdit}
+            >
+              {primary}
+            </p>
+          )}
           <p className="mt-0.5 truncate text-[11px] leading-tight text-muted-foreground">
             {siteLine}
           </p>
@@ -520,7 +578,19 @@ export function LinkCard({
 
         <Media link={link} telegramSrc={telegramSrc} />
         {showBoardLinkMetaStrip(link, isTelegramEmbed) ? (
-          <BoardLinkMetaStrip link={link} />
+          <BoardLinkMetaStrip
+            link={link}
+            onTitleSave={async (title) => {
+              const res = await fetch(`/api/links/${link.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title }),
+              });
+              if (!res.ok) throw new Error("Could not save title");
+              const data = (await res.json()) as { link: LinkSerialized };
+              onPatched?.(data.link);
+            }}
+          />
         ) : null}
 
         {link.note ? (

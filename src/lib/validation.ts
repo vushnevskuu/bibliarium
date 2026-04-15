@@ -12,6 +12,7 @@ export const patchLinkBodySchema = z.object({
     .max(2000, "Note must be at most 2000 characters")
     .optional()
     .nullable(),
+  title: z.string().max(500).optional().nullable(),
   isPublic: z.boolean().optional(),
 });
 

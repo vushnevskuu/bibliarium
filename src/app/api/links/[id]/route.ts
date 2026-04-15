@@ -55,7 +55,7 @@ export async function PATCH(request: Request, context: Ctx) {
     );
   }
 
-  const { collectionId, note, isPublic } = parsed.data;
+  const { collectionId, note, title, isPublic } = parsed.data;
 
   const existing = await prisma.link.findFirst({
     where: { id, userId: ctx.appUser.id },
@@ -86,11 +86,16 @@ export async function PATCH(request: Request, context: Ctx) {
       }
     }
 
+    const titleUpdate = title !== undefined
+      ? (title === null ? null : (title.trim() || null))
+      : undefined;
+
     const link = await prisma.link.update({
       where: { id },
       data: {
         ...(collectionId !== undefined ? { collectionId } : {}),
         ...(note !== undefined ? { note: noteUpdate } : {}),
+        ...(title !== undefined ? { title: titleUpdate } : {}),
         ...(isPublic !== undefined ? { isPublic } : {}),
       },
     });
