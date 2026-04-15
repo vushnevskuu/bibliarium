@@ -141,7 +141,8 @@ export function LinkBoard({
     const url = `${window.location.origin}/u/${currentSlug}`;
     await navigator.clipboard.writeText(url);
     flashCopy("share");
-    setMenuOpen(false);
+    // close after showing feedback
+    setTimeout(() => setMenuOpen(false), 1600);
   };
 
   const copyForAI = async () => {
@@ -152,7 +153,8 @@ export function LinkBoard({
       await navigator.clipboard.writeText(text);
       flashCopy("ai");
     } catch { /* ignore */ }
-    setMenuOpen(false);
+    // close after showing feedback
+    setTimeout(() => setMenuOpen(false), 1600);
   };
 
   const refreshLinks = React.useCallback(async () => {
