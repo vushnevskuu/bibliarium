@@ -22,13 +22,13 @@ export function EmptyState({ onSubmit, busy }: Props) {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      className="fixed inset-0 flex flex-col items-center justify-center px-6 text-center"
+      className="flex flex-col items-center justify-center py-32 text-center"
     >
       <p className="mb-5 text-sm text-muted-foreground">
         Drop your first link here.
       </p>
 
-      <form onSubmit={handleSubmit} className="flex w-full gap-2">
+      <form onSubmit={handleSubmit} className="flex w-full max-w-[340px] gap-2">
         <input
           type="url"
           autoFocus

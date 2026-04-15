@@ -349,32 +349,33 @@ export function LinkBoard({
           </AnimatePresence>
         </div>
 
-        {!loadingList && links.length === 0 ? (
-          <EmptyState onSubmit={onSubmit} busy={busy} />
-        ) : (
+        {/* Initial loading */}
+        {loadingList && links.length === 0 && (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-5">
-            {loadingList && links.length === 0 ? (
-              Array.from({ length: 6 }, (_, i) => (
-                <div key={i}>
-                  <CardSkeleton />
-                </div>
-              ))
-            ) : (
-              <>
-                {busy && skeletonCount > 0
-                  ? Array.from({ length: skeletonCount }, (_, i) => (
-                      <div key={`skm-${i}`}>
-                        <CardSkeleton />
-                      </div>
-                    ))
-                  : null}
-                {links.map((link) => (
-                  <div key={link.id}>
-                    <LinkCard {...cardProps(link)} />
-                  </div>
-                ))}
-              </>
-            )}
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i}><CardSkeleton /></div>
+            ))}
+          </div>
+        )}
+
+        {/* Empty state — shown when not loading and no links yet, including while first link is being added */}
+        {!loadingList && links.length === 0 && (
+          <EmptyState onSubmit={onSubmit} busy={busy} />
+        )}
+
+        {/* Grid — shown as soon as there is at least one link */}
+        {links.length > 0 && (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start gap-5">
+            {busy && skeletonCount > 0
+              ? Array.from({ length: skeletonCount }, (_, i) => (
+                  <div key={`skm-${i}`}><CardSkeleton /></div>
+                ))
+              : null}
+            {links.map((link) => (
+              <div key={link.id}>
+                <LinkCard {...cardProps(link)} />
+              </div>
+            ))}
           </div>
         )}
       </main>
