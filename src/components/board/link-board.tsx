@@ -33,43 +33,56 @@ function useMasonryCols(
   return cols;
 }
 
-const SCRAMBLE_CHARS = "abcdefghijklmnopqrstuvwxyz";
+const SHUFFLE_WORD = "shuffle";
+const SHUFFLE_N = SHUFFLE_WORD.length;
+const SHUFFLE_IDENTITY = Array.from({ length: SHUFFLE_N }, (_, i) => i);
 
-function useTextScramble(text: string, duration = 650) {
-  const [display, setDisplay] = React.useState(text);
-  const rafRef = React.useRef<number | null>(null);
+/**
+ * Animates the letters of "shuffle" like horizontal sliding puzzle tiles.
+ * On hover: generates 3 random pair-swaps applied one-by-one every 550ms.
+ * On leave: all letters instantly slide back to their home positions.
+ */
+function useSlideLetters() {
+  const [order, setOrder] = React.useState<number[]>(SHUFFLE_IDENTITY);
+  const timersRef = React.useRef<ReturnType<typeof setTimeout>[]>([]);
+  const stateRef = React.useRef<number[]>(SHUFFLE_IDENTITY);
 
-  const trigger = React.useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    const start = performance.now();
+  const clear = () => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  };
 
-    const tick = (now: number) => {
-      const t = Math.min((now - start) / duration, 1);
-      const next = text
-        .split("")
-        .map((ch, i) => {
-          const threshold = (i + 1) / text.length;
-          if (t >= threshold) return ch;
-          return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
-        })
-        .join("");
-      setDisplay(next);
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        setDisplay(text);
-      }
-    };
+  const onEnter = React.useCallback(() => {
+    clear();
+    const working = [...stateRef.current];
+    // Pre-compute 3 random swaps and their resulting states
+    const steps: number[][] = [];
+    for (let k = 0; k < 3; k++) {
+      const a = Math.floor(Math.random() * SHUFFLE_N);
+      let b: number;
+      do { b = Math.floor(Math.random() * SHUFFLE_N); } while (b === a);
+      [working[a], working[b]] = [working[b], working[a]];
+      steps.push([...working]);
+    }
+    steps.forEach((snapshot, i) => {
+      timersRef.current.push(
+        setTimeout(() => {
+          stateRef.current = snapshot;
+          setOrder(snapshot);
+        }, (i + 1) * 550)
+      );
+    });
+  }, []);
 
-    rafRef.current = requestAnimationFrame(tick);
-  }, [text, duration]);
+  const onLeave = React.useCallback(() => {
+    clear();
+    stateRef.current = SHUFFLE_IDENTITY;
+    setOrder(SHUFFLE_IDENTITY);
+  }, []);
 
-  React.useEffect(
-    () => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); },
-    []
-  );
+  React.useEffect(() => () => clear(), []);
 
-  return { display, trigger };
+  return { order, onEnter, onLeave };
 }
 
 async function parseError(res: Response): Promise<string> {
@@ -108,7 +121,7 @@ export function LinkBoard({
   currentEmail?: string | null;
 }) {
   const router = useRouter();
-  const { display: shuffleLabel, trigger: triggerScramble } = useTextScramble("shuffle");
+  const { order: shuffleOrder, onEnter: shuffleEnter, onLeave: shuffleLeave } = useSlideLetters();
   const gridRef = React.useRef<HTMLDivElement>(null);
   const numCols = useMasonryCols(gridRef);
   const [links, setLinks] = React.useState<LinkSerialized[]>(initialLinks);
@@ -353,14 +366,25 @@ export function LinkBoard({
               <button
                 type="button"
                 onClick={() => void onMix()}
-                onMouseEnter={triggerScramble}
+                onMouseEnter={shuffleEnter}
+                onMouseLeave={shuffleLeave}
                 disabled={links.length < 2 || mixBusy || loadingList}
                 className={cn(
                   "font-mono text-[18px] font-medium leading-snug tracking-tight text-muted-foreground transition-colors hover:text-foreground",
                   "disabled:pointer-events-none disabled:opacity-30"
                 )}
               >
-                {shuffleLabel}
+                <span className="inline-flex">
+                  {shuffleOrder.map((charIdx) => (
+                    <motion.span
+                      key={charIdx}
+                      layout
+                      transition={{ type: "spring", stiffness: 90, damping: 18 }}
+                    >
+                      {SHUFFLE_WORD[charIdx]}
+                    </motion.span>
+                  ))}
+                </span>
               </button>
               <button
                 type="button"
