@@ -40,12 +40,13 @@ export default async function BoardPage() {
       <LinkBoard
         initialLinks={links.map(serializeLink)}
         currentSlug={ctx.appUser.slug}
+        currentEmail={ctx.appUser.email}
       />
     );
   } catch (e) {
     console.error("Database unavailable for initial load:", e);
     return (
-      <LinkBoard initialLinks={[]} currentSlug={ctx.appUser.slug} />
+      <LinkBoard initialLinks={[]} currentSlug={ctx.appUser.slug} currentEmail={ctx.appUser.email} />
     );
   }
 }

@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import { Loader2, Plus, X } from "lucide-react";
 import type { LinkSerialized } from "@/types/link";
 import { cn } from "@/lib/utils";
-import { UserMenu } from "@/components/auth/user-menu";
-import { TopBar } from "./top-bar";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { LinkCard } from "./link-card";
 import { EmptyState } from "./empty-state";
 import { CardSkeleton } from "./card-skeleton";
@@ -37,10 +38,13 @@ function shuffleInPlace<T>(items: T[]): T[] {
 
 export function LinkBoard({
   initialLinks,
-  currentSlug,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  currentSlug: _currentSlug,
+  currentEmail,
 }: {
   initialLinks: LinkSerialized[];
-  currentSlug: string;
+  currentSlug?: string;
+  currentEmail?: string | null;
 }) {
   const router = useRouter();
   const [links, setLinks] = React.useState<LinkSerialized[]>(initialLinks);
@@ -49,6 +53,10 @@ export function LinkBoard({
   const [error, setError] = React.useState<string | null>(null);
   const [skeletonCount, setSkeletonCount] = React.useState(0);
   const [mixBusy, setMixBusy] = React.useState(false);
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [urlValue, setUrlValue] = React.useState("");
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   const refreshLinks = React.useCallback(async () => {
     setLoadingList(true);
@@ -188,44 +196,151 @@ export function LinkBoard({
   });
 
 
+  const handleAddSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const v = urlValue.trim();
+    if (!v || busy) return;
+    onSubmit(v);
+    setUrlValue("");
+    setAddOpen(false);
+  };
+
+  const openAdd = () => {
+    setAddOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const closeAdd = () => {
+    setAddOpen(false);
+    setUrlValue("");
+  };
+
+  const signOut = async () => {
+    const supabase = createBrowserSupabaseClient();
+    await supabase.auth.signOut();
+    setMenuOpen(false);
+    router.push("/");
+    router.refresh();
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <TopBar
-        onSubmit={onSubmit}
-        busy={busy}
-        error={error}
-        trailing={<UserMenu boardSlug={currentSlug} />}
-      />
-
       <main className="min-w-0 px-10 pb-6 pt-8">
-        <div className="mb-8 flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-lg font-medium tracking-tight text-muted-foreground sm:text-xl">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 sm:gap-x-3">
-            <h1 className="m-0 inline p-0 font-semibold text-foreground">Bibliarium</h1>
-            <span className="select-none" aria-hidden>
-              •
-            </span>
-            <span>
-              {links.length} card{links.length === 1 ? "" : "s"}
-            </span>
+        {/* Header */}
+        <div className="mb-8 min-w-0">
+          <div className="flex w-full min-w-0 items-center justify-between gap-3">
+            {/* Left: title • count • email */}
+            <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-muted-foreground">
+              <span className="font-semibold text-foreground text-base">Bibliarium</span>
+              <span className="select-none" aria-hidden>•</span>
+              <span>{links.length} card{links.length === 1 ? "" : "s"}</span>
+              {currentEmail ? (
+                <>
+                  <span className="select-none" aria-hidden>•</span>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setMenuOpen((o) => !o)}
+                      className="truncate max-w-[200px] hover:text-foreground transition-colors"
+                    >
+                      {currentEmail}
+                    </button>
+                    <AnimatePresence>
+                      {menuOpen && (
+                        <>
+                          <button
+                            type="button"
+                            className="fixed inset-0 z-[60] cursor-default"
+                            onClick={() => setMenuOpen(false)}
+                            aria-label="Close menu"
+                          />
+                          <motion.div
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                            transition={{ duration: 0.12 }}
+                            className="absolute left-0 top-full z-[70] mt-1.5 w-40 rounded-lg border border-border bg-popover py-1 text-sm shadow-lg"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => void signOut()}
+                              className="w-full px-3 py-2 text-left text-foreground hover:bg-muted/60"
+                            >
+                              Sign out
+                            </button>
+                          </motion.div>
+                        </>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {/* Right: + button and shuffle */}
+            <div className="flex shrink-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void onMix()}
+                disabled={links.length < 2 || mixBusy || loadingList}
+                className={cn(
+                  "text-sm text-muted-foreground transition-colors hover:text-foreground underline-offset-4 hover:underline",
+                  "disabled:pointer-events-none disabled:opacity-30"
+                )}
+              >
+                shuffle
+              </button>
+              <button
+                type="button"
+                onClick={addOpen ? closeAdd : openAdd}
+                disabled={busy}
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-full border border-border transition-colors",
+                  addOpen
+                    ? "bg-foreground text-background hover:opacity-80"
+                    : "bg-background text-foreground hover:border-foreground/40"
+                )}
+                aria-label={addOpen ? "Cancel" : "Add link"}
+              >
+                {addOpen ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => void onMix()}
-            disabled={links.length < 2 || mixBusy || loadingList}
-            title={
-              links.length < 2
-                ? "Add at least two cards to shuffle"
-                : "Shuffle card order"
-            }
-            className={cn(
-              "shrink-0 border-0 bg-transparent p-0 text-right shadow-none outline-none ring-0 transition-colors",
-              "underline-offset-4 hover:text-foreground hover:underline",
-              "focus-visible:text-foreground focus-visible:underline focus-visible:ring-1 focus-visible:ring-foreground/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm",
-              "disabled:pointer-events-none disabled:no-underline disabled:opacity-40"
+
+          {/* Expandable URL input */}
+          <AnimatePresence>
+            {addOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className="overflow-hidden"
+              >
+                <form onSubmit={handleAddSubmit} className="flex gap-2 pt-3">
+                  <input
+                    ref={inputRef}
+                    type="url"
+                    placeholder="Paste any URL — YouTube, X, article…"
+                    value={urlValue}
+                    onChange={(e) => setUrlValue(e.target.value)}
+                    disabled={busy}
+                    className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-foreground/25 disabled:opacity-50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!urlValue.trim() || busy}
+                    className="flex h-9 shrink-0 items-center justify-center rounded-md bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-80 disabled:opacity-30"
+                  >
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
+                  </button>
+                </form>
+                {error && (
+                  <p className="mt-1.5 text-xs text-destructive">{error}</p>
+                )}
+              </motion.div>
             )}
-          >
-            shuffle
-          </button>
+          </AnimatePresence>
         </div>
 
         {!loadingList && links.length === 0 ? (
