@@ -11,6 +11,45 @@ import { LinkCard } from "./link-card";
 import { EmptyState } from "./empty-state";
 import { CardSkeleton } from "./card-skeleton";
 
+const SCRAMBLE_CHARS = "abcdefghijklmnopqrstuvwxyz";
+
+function useTextScramble(text: string, duration = 650) {
+  const [display, setDisplay] = React.useState(text);
+  const rafRef = React.useRef<number | null>(null);
+
+  const trigger = React.useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const start = performance.now();
+
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      const next = text
+        .split("")
+        .map((ch, i) => {
+          const threshold = (i + 1) / text.length;
+          if (t >= threshold) return ch;
+          return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+        })
+        .join("");
+      setDisplay(next);
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        setDisplay(text);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+  }, [text, duration]);
+
+  React.useEffect(
+    () => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); },
+    []
+  );
+
+  return { display, trigger };
+}
+
 async function parseError(res: Response): Promise<string> {
   if (res.status === 404) {
     return "API не найден (404). Остановите dev-сервер, в корне проекта выполните: rm -rf .next && npm run dev";
@@ -47,6 +86,7 @@ export function LinkBoard({
   currentEmail?: string | null;
 }) {
   const router = useRouter();
+  const { display: shuffleLabel, trigger: triggerScramble } = useTextScramble("shuffle");
   const [links, setLinks] = React.useState<LinkSerialized[]>(initialLinks);
   const [busy, setBusy] = React.useState(false);
   const [loadingList, setLoadingList] = React.useState(false);
@@ -288,13 +328,14 @@ export function LinkBoard({
               <button
                 type="button"
                 onClick={() => void onMix()}
+                onMouseEnter={triggerScramble}
                 disabled={links.length < 2 || mixBusy || loadingList}
                 className={cn(
-                  "text-[18px] font-medium leading-snug tracking-tight text-muted-foreground transition-colors hover:text-foreground underline-offset-4 hover:underline",
+                  "font-mono text-[18px] font-medium leading-snug tracking-tight text-muted-foreground transition-colors hover:text-foreground",
                   "disabled:pointer-events-none disabled:opacity-30"
                 )}
               >
-                shuffle
+                {shuffleLabel}
               </button>
               <button
                 type="button"
