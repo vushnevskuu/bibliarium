@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, Plus, X } from "lucide-react";
 import type { LinkSerialized } from "@/types/link";
 import { cn } from "@/lib/utils";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -130,10 +129,7 @@ export function LinkBoard({
   const [error, setError] = React.useState<string | null>(null);
   const [skeletonCount, setSkeletonCount] = React.useState(0);
   const [mixBusy, setMixBusy] = React.useState(false);
-  const [addOpen, setAddOpen] = React.useState(false);
-  const [urlValue, setUrlValue] = React.useState("");
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const inputRef = React.useRef<HTMLInputElement>(null);
 
   const refreshLinks = React.useCallback(async () => {
     setLoadingList(true);
@@ -305,26 +301,6 @@ export function LinkBoard({
   });
 
 
-  const handleAddSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    let v = urlValue.trim();
-    if (!v || busy) return;
-    if (!/^https?:\/\//i.test(v)) v = `https://${v}`;
-    onSubmit(v);
-    setUrlValue("");
-    setAddOpen(false);
-  };
-
-  const openAdd = () => {
-    setAddOpen(true);
-    setTimeout(() => inputRef.current?.focus(), 50);
-  };
-
-  const closeAdd = () => {
-    setAddOpen(false);
-    setUrlValue("");
-  };
-
   const signOut = async () => {
     const supabase = createBrowserSupabaseClient();
     await supabase.auth.signOut();
@@ -393,7 +369,7 @@ export function LinkBoard({
               ) : null}
             </div>
 
-            {/* Right: + button and shuffle */}
+            {/* Right: shuffle */}
             <div className="flex shrink-0 items-center gap-3">
               <button
                 type="button"
@@ -418,58 +394,8 @@ export function LinkBoard({
                   ))}
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={addOpen ? closeAdd : openAdd}
-                disabled={busy}
-                className={cn(
-                  "flex h-7 w-7 items-center justify-center rounded-full border border-border transition-colors",
-                  addOpen
-                    ? "bg-foreground text-background hover:opacity-80"
-                    : "bg-background text-foreground hover:border-foreground/40"
-                )}
-                aria-label={addOpen ? "Cancel" : "Add link"}
-              >
-                {addOpen ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-              </button>
             </div>
           </div>
-
-          {/* Expandable URL input */}
-          <AnimatePresence>
-            {addOpen && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-hidden"
-              >
-                <form onSubmit={handleAddSubmit} className="flex gap-2 pt-3">
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    inputMode="url"
-                    placeholder="Paste any URL — YouTube, X, article…"
-                    value={urlValue}
-                    onChange={(e) => setUrlValue(e.target.value)}
-                    disabled={busy}
-                    className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-foreground/25 disabled:opacity-50"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!urlValue.trim() || busy}
-                    className="flex h-9 shrink-0 items-center justify-center rounded-md bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-80 disabled:opacity-30"
-                  >
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
-                  </button>
-                </form>
-                {error && (
-                  <p className="mt-1.5 text-xs text-destructive">{error}</p>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
         {/* Masonry container — always mounted so ResizeObserver can measure */}
