@@ -469,7 +469,8 @@ function NoteEditorDialog({
 
 export function LinkCard({
   link,
-  onOpen,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onOpen: _onOpen,
   onDelete,
   onPatched,
   onNoteEditorClose,
@@ -510,17 +511,8 @@ export function LinkCard({
   return (
     <article className="group w-full min-w-0">
       <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpen}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onOpen();
-          }
-        }}
         className={cn(
-          "relative cursor-pointer rounded-2xl border border-border bg-card transition-colors hover:border-foreground/15 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/20 overflow-clip",
+          "relative rounded-2xl border border-border bg-card overflow-clip",
           isTelegramEmbed && "[backface-visibility:hidden]"
         )}
       >

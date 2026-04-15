@@ -295,7 +295,7 @@ export function LinkBoard({
 
   const cardProps = (link: LinkSerialized) => ({
     link,
-    onOpen: () => router.push(`/l/${link.id}`),
+    onOpen: () => { /* card click disabled */ },
     onDelete: () => void onDelete(link.id),
     onPatched: (updated: LinkSerialized) => {
       setLinks((prev) =>
