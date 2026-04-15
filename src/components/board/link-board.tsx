@@ -276,7 +276,7 @@ export function LinkBoard({
         trailing={<UserMenu boardSlug={currentSlug} />}
       />
 
-      <main className="mx-auto min-w-0 max-w-[1600px] px-4 pb-6 pt-8 sm:px-6 lg:px-8">
+      <main className="min-w-0 px-3 pb-6 pt-8">
         <div className="mb-8 flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-lg font-medium tracking-tight text-muted-foreground sm:text-xl">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 sm:gap-x-3">
             <h1 className="m-0 inline p-0 font-semibold text-foreground">Bibliarium</h1>
