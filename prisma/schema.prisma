@@ -3,8 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  /// Runtime (Vercel): Supabase pooler `?pgbouncer=true` на :6543 — см. Connect → ORM → Prisma.
+  url       = env("DATABASE_URL")
+  /// Миграции (`prisma migrate deploy`): прямое соединение без PgBouncer — :5432 или `db.*.supabase.co`.
+  directUrl = env("DIRECT_URL")
 }
 
 /// App user row synced from Supabase Auth (`id` equals `auth.users.id`).

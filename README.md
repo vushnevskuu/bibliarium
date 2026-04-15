@@ -9,7 +9,7 @@ Paste any URL into the sticky header: the link appears on a **Pinterest-style ma
 - **Tailwind CSS** + **next-themes**
 - **Framer Motion**
 - **Balanced masonry columns** (greedy packing by estimated card height)
-- **Prisma 5** + **SQLite** by default (`file:./dev.db`) — switch `provider` to `postgresql` for production
+- **Prisma 5** + **PostgreSQL** (локально через Docker, в проде — Neon / любой Postgres)
 - **Cheerio** — HTML preview + cheap main-text extraction for `article` / `web` links
 - **Zod** — API validation
 
@@ -29,7 +29,10 @@ Paste any URL into the sticky header: the link appears on a **Pinterest-style ma
 ## Prerequisites
 
 - Node.js 18+
-- A **Supabase** project (free tier is fine) for authentication
+- **Docker** (для локального Postgres) или внешний `DATABASE_URL`
+- Проект **Supabase** (бесплатного уровня достаточно) для аутентификации
+
+Полный деплой на Vercel: см. **[DEPLOY.md](./DEPLOY.md)**.
 
 ## Setup
 
@@ -45,8 +48,8 @@ Paste any URL into the sticky header: the link appears on a **Pinterest-style ma
    cp .env.example .env
    ```
 
-   - `DATABASE_URL="file:./dev.db"` for local SQLite.
-   - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from Supabase → **Project Settings → API** (required for sign-in).
+   - `DATABASE_URL` и **`DIRECT_URL`** — см. `.env.example`. Локально с Docker обе строки одинаковые; на Supabase — две строки из **Connect → ORM → Prisma**.
+   - Supabase из **Project Settings → API**: пара **`NEXT_PUBLIC_SUPABASE_URL`** + **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**, либо **`SUPABASE_URL`** + **`SUPABASE_ANON_KEY`** (те же значения; см. `.env.example`).
    - Optional: `NEXT_PUBLIC_APP_URL=https://your-domain.com` — used on `/u/[slug]/ai-profile` so JSON/Markdown URLs are absolute for LLM copy-paste when `Host` is missing.
 
 3. **Supabase Auth configuration**
@@ -65,19 +68,20 @@ Paste any URL into the sticky header: the link appears on a **Pinterest-style ma
      - Magic link / sign-up confirmation should send users to your app using the same host as Site URL. For token-based links, set confirmation URL to include `/auth/confirm` if you use the OTP route (see `src/app/auth/confirm/route.ts`).
    - **Automatic identity linking** (optional but recommended): enable linking when a Google account shares an email with an existing magic-link user (Supabase dashboard → Auth settings), so one Prisma `User` row stays consistent.
 
-4. **Database**
+4. **База данных**
 
    ```bash
-   npx prisma db push
+   docker compose up -d
+   npx prisma migrate deploy
    ```
 
-5. **Seed** (optional — creates profile `slug=demo` with sample cards and public AI profile for smoke tests)
+5. **Сид** (по желанию — профиль `slug=demo` с примерами карточек и публичной AI-страницей)
 
    ```bash
    npm run db:seed
    ```
 
-   Seeded data lives under a fixed app user id in SQLite; **your real account after sign-in is separate** and starts with an empty board unless you add links.
+   Данные сида привязаны к фиксированному id в БД; **твой аккаунт после входа** — отдельный пользователь с пустой доской, пока не добавишь ссылки.
 
 6. **Dev**
 
@@ -112,6 +116,13 @@ Paste any URL into the sticky header: the link appears on a **Pinterest-style ma
 | `npm run verify` | Lint + production build (CI smoke) |
 | `npm run db:seed` | Seed demo data |
 | `npm run db:push` | Push schema |
+| `npm run extension:zip` | Pack `extension/` → `public/bibliarium-extension.zip` |
+
+## Browser extension
+
+- Install guide: **`/extension`** (also linked from the landing footer).
+- Session handoff: **`/extension/connect`** (signed-in users copy JSON into extension options).
+- Source: **`extension/`** (MV3: popup, background, context menus, optional `Alt+Shift+B` quick-save). See **`extension/README.md`**.
 
 ## API (high level)
 
@@ -124,6 +135,10 @@ Paste any URL into the sticky header: the link appears on a **Pinterest-style ma
 | `PUT /api/links/reorder` | Persist sort order for current user’s ids |
 | `GET /api/taste/export?slug=…&format=json\|md` | Export (owner always; others only if profile is public) |
 | `GET/POST /api/collections` | List / create collections for current user |
+| `GET /api/extension/me` | Extension: validate `Authorization: Bearer` Supabase access token |
+| `GET /api/extension/boards` | Extension: list collections for that user |
+| `POST /api/extension/capture` | Extension: save URL (same ingestion as `POST /api/links`) |
+| `POST /api/extension/refresh` | Extension: refresh Supabase session (body: `refresh_token`) |
 
 ## Product routes
 
@@ -132,6 +147,8 @@ Paste any URL into the sticky header: the link appears on a **Pinterest-style ma
 - **`/l/[id]`** — Card overlay; public if `isPublic`, otherwise owner only.
 - **`/analysis`** — Aggregate taste view + export links for **your** slug (auth required).
 - **`/u/[slug]/ai-profile`** — LLM-oriented landing; visible if `aiProfilePublic` or you are the owner.
+- **`/extension`** — Extension install + zip download.
+- **`/extension/connect`** — Copy session JSON for the extension (noindex).
 
 ## GitHub Pages
 

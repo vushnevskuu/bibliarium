@@ -1,12 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { syncAppUserFromSupabase } from "@/lib/auth/sync-app-user";
+import { resolveSupabaseFromProcessEnv } from "@/lib/supabase/resolve-env";
 import type { User } from "@prisma/client";
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
-  );
+  return resolveSupabaseFromProcessEnv() !== null;
 }
 
 export async function getAuthenticatedAppUser(): Promise<{

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bibliarium extension — settings</title>
+    <style>
+      body {
+        font: 15px/1.5 system-ui, sans-serif;
+        max-width: 560px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+        color: #111;
+        background: #fafafa;
+      }
+      h1 {
+        font-size: 1.35rem;
+        margin: 0 0 8px;
+      }
+      p {
+        color: #444;
+        margin: 0 0 16px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-top: 20px;
+        margin-bottom: 6px;
+      }
+      input[type="url"],
+      textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        font: inherit;
+      }
+      textarea {
+        min-height: 120px;
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+      button {
+        padding: 10px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        border: 1px solid #ccc;
+        background: #111;
+        color: #fff;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #fff;
+        color: #111;
+      }
+      #status {
+        margin-top: 12px;
+        font-size: 13px;
+      }
+      .ok {
+        color: #1b6e1b;
+      }
+      .err {
+        color: #b42318;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Bibliarium extension</h1>
+    <p>
+      Set your app URL (no trailing slash), then paste the session JSON from
+      the connect page after you sign in.
+    </p>
+
+    <label for="baseUrl">Bibliarium base URL</label>
+    <input id="baseUrl" type="url" placeholder="http://127.0.0.1:3333" />
+
+    <label for="session">Session JSON (access + refresh token)</label>
+    <textarea
+      id="session"
+      placeholder='{"access_token":"…","refresh_token":"…","expires_at":123}'
+    ></textarea>
+
+    <div class="row">
+      <button type="button" id="save">Save</button>
+      <button type="button" id="grant" class="secondary">
+        Request HTTPS access (for production URLs)
+      </button>
+      <button type="button" id="openConnect" class="secondary">
+        Open connect page
+      </button>
+    </div>
+    <p id="status"></p>
+
+    <script src="api.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

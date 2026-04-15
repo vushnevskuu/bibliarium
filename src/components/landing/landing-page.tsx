@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   Bookmark,
+  Download,
   FileJson2,
   LayoutGrid,
   ShieldCheck,
@@ -56,7 +57,22 @@ export function LandingPage() {
               Bibliarium
             </span>
           </Link>
-          <nav className="flex items-center gap-2" aria-label="Primary">
+          <nav className="flex flex-wrap items-center justify-end gap-2" aria-label="Primary">
+            <a
+              href="/bibliarium-extension.zip"
+              download="bibliarium-extension.zip"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <Download className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+              <span className="hidden sm:inline">Extension</span>
+              <span className="sm:hidden">.zip</span>
+            </a>
+            <Link
+              href="/extension"
+              className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:inline"
+            >
+              Install guide
+            </Link>
             <Link
               href={SIGNIN}
               className="rounded-lg border border-border bg-background px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -107,6 +123,14 @@ export function LandingPage() {
               Start free — email or Google
               <ArrowRight className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
             </Link>
+            <a
+              href="/bibliarium-extension.zip"
+              download="bibliarium-extension.zip"
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-border bg-card px-5 text-sm font-semibold text-foreground shadow-sm transition-colors hover:border-foreground/20 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <Download className="h-4 w-4 shrink-0" aria-hidden />
+              Download Chrome extension
+            </a>
             <Link
               href="/u/demo/ai-profile"
               className="inline-flex h-12 items-center justify-center px-2 text-sm font-medium text-muted-foreground underline-offset-[6px] transition-colors hover:text-foreground hover:underline sm:px-4"
@@ -236,6 +260,16 @@ export function LandingPage() {
             <Link href={SIGNIN} className="hover:text-foreground">
               Sign in
             </Link>
+            <Link href="/extension" className="hover:text-foreground">
+              Extension
+            </Link>
+            <a
+              href="/bibliarium-extension.zip"
+              download="bibliarium-extension.zip"
+              className="hover:text-foreground"
+            >
+              Extension (.zip)
+            </a>
             <Link href="/board" className="hover:text-foreground">
               Board
             </Link>

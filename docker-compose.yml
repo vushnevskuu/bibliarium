@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: bibliarium
+      POSTGRES_PASSWORD: bibliarium
+      POSTGRES_DB: bibliarium
+    volumes:
+      - bibliarium_pg:/var/lib/postgresql/data
+
+volumes:
+  bibliarium_pg:

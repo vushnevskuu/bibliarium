@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { resolveSupabaseFromProcessEnv } from "@/lib/supabase/resolve-env";
 
 const AUTH_REQUIRED_PREFIXES = ["/board", "/analysis"];
 
@@ -10,16 +11,17 @@ function isAuthRequiredPath(pathname: string): boolean {
 }
 
 export async function updateSession(request: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const cfg = resolveSupabaseFromProcessEnv();
 
   let response = NextResponse.next({
     request: { headers: request.headers },
   });
 
-  if (!url || !key) {
+  if (!cfg) {
     return response;
   }
+
+  const { url, anonKey: key } = cfg;
 
   const supabase = createServerClient(url, key, {
     cookies: {

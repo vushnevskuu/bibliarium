@@ -7,14 +7,16 @@
     "dev": "next dev -p 3333",
     "dev:clean": "rm -rf .next && next dev -p 3333",
     "clean": "rm -rf .next",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "verify": "npm run lint && npm run build",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "extension:zip": "node scripts/zip-extension.mjs",
     "postinstall": "prisma generate"
   },
   "prisma": {

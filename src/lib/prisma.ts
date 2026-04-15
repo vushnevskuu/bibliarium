@@ -12,12 +12,3 @@ export const prisma =
   });
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
-
-/** Fewer SQLITE_BUSY under parallel dev (WAL + wait). PRAGMAs return rows → queryRaw. */
-if (process.env.DATABASE_URL?.startsWith("file:")) {
-  void prisma
-    .$connect()
-    .then(() => prisma.$queryRawUnsafe("PRAGMA journal_mode = WAL"))
-    .then(() => prisma.$queryRawUnsafe("PRAGMA busy_timeout = 8000"))
-    .catch((e) => console.warn("[prisma] SQLite pragma:", e));
-}

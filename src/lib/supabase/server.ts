@@ -1,12 +1,15 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { resolveSupabaseFromProcessEnv } from "@/lib/supabase/resolve-env";
 
 export function createClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const cfg = resolveSupabaseFromProcessEnv();
+  if (!cfg) {
+    throw new Error(
+      "Missing Supabase env: set SUPABASE_URL + SUPABASE_ANON_KEY and/or NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY"
+    );
   }
+  const { url, anonKey: key } = cfg;
   const cookieStore = cookies();
   return createServerClient(url, key, {
     cookies: {

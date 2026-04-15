@@ -3,22 +3,23 @@
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import {
+  createBrowserSupabaseClient,
+  createBrowserSupabaseClientWithConfig,
+  isBrowserSupabaseConfigured,
+} from "@/lib/supabase/client";
+import type { SupabasePublicConfig } from "@/lib/supabase/public-config";
 import { safeNextPath } from "@/lib/auth/safe-next";
 import { cn } from "@/lib/utils";
 
-function configured(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() &&
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
-  );
-}
+type Props = { supabasePublic: SupabasePublicConfig | null };
 
-export function SignInForm() {
+export function SignInForm({ supabasePublic }: Props) {
   const searchParams = useSearchParams();
   const rawNext = searchParams.get("next");
   const next = safeNextPath(rawNext);
   const errorParam = searchParams.get("error");
+  const detailParam = searchParams.get("detail");
 
   const [email, setEmail] = React.useState("");
   const [busy, setBusy] = React.useState<"google" | "email" | null>(null);
@@ -29,13 +30,19 @@ export function SignInForm() {
     if (errorParam === "expired_link") {
       setError("This sign-in link has expired. Request a new one.");
     } else if (errorParam === "auth_callback") {
-      setError("Could not complete sign-in. Try again.");
+      setError(
+        detailParam
+          ? `Could not complete sign-in: ${detailParam}`
+          : "Could not complete sign-in. Try again."
+      );
     } else if (errorParam === "missing_config") {
-      setError("Supabase is not configured. Add keys to .env.local.");
+      setError(
+        "Supabase is not configured. Add env vars in Vercel (or .env locally), then redeploy."
+      );
     } else if (errorParam) {
       setError("Something went wrong. Try again.");
     }
-  }, [errorParam]);
+  }, [errorParam, detailParam]);
 
   const origin =
     typeof window !== "undefined" ? window.location.origin : "";
@@ -43,15 +50,19 @@ export function SignInForm() {
   const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
 
   const onGoogle = async () => {
-    if (!configured()) {
-      setError("Missing Supabase environment variables.");
+    if (!isBrowserSupabaseConfigured(supabasePublic)) {
+      setError(
+        "Supabase is not configured. In Vercel → Settings → Environment Variables, add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or SUPABASE_URL and SUPABASE_ANON_KEY), then Redeploy."
+      );
       return;
     }
     setError(null);
     setMessage(null);
     setBusy("google");
     try {
-      const supabase = createBrowserSupabaseClient();
+      const supabase = supabasePublic
+        ? createBrowserSupabaseClientWithConfig(supabasePublic)
+        : createBrowserSupabaseClient();
       const { error: e } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -71,15 +82,19 @@ export function SignInForm() {
     e.preventDefault();
     const trimmed = email.trim();
     if (!trimmed || busy) return;
-    if (!configured()) {
-      setError("Missing Supabase environment variables.");
+    if (!isBrowserSupabaseConfigured(supabasePublic)) {
+      setError(
+        "Supabase is not configured. In Vercel → Settings → Environment Variables, add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or SUPABASE_URL and SUPABASE_ANON_KEY), then Redeploy."
+      );
       return;
     }
     setError(null);
     setMessage(null);
     setBusy("email");
     try {
-      const supabase = createBrowserSupabaseClient();
+      const supabase = supabasePublic
+        ? createBrowserSupabaseClientWithConfig(supabasePublic)
+        : createBrowserSupabaseClient();
       const { error: err } = await supabase.auth.signInWithOtp({
         email: trimmed,
         options: {

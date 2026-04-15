@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { resolveSupabaseFromProcessEnv } from "@/lib/supabase/resolve-env";
 import { SignInForm } from "./sign-in-form";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ function FormFallback() {
 }
 
 export default function SignInPage() {
+  const supabasePublic = resolveSupabaseFromProcessEnv();
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="flex justify-end px-4 py-4 sm:px-8">
@@ -31,7 +33,7 @@ export default function SignInPage() {
           </p>
           <div className="mt-8">
             <Suspense fallback={<FormFallback />}>
-              <SignInForm />
+              <SignInForm supabasePublic={supabasePublic} />
             </Suspense>
           </div>
         </div>

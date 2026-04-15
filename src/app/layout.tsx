@@ -2,7 +2,11 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { getSiteUrl } from "@/lib/site-url";
+import { resolveSupabaseFromProcessEnv } from "@/lib/supabase/resolve-env";
 import "./globals.css";
+
+/** Иначе layout мог закешироваться при билде без env — скрипт с Supabase не попадал в HTML. */
+export const dynamic = "force-dynamic";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -39,9 +43,20 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const supabasePublic = resolveSupabaseFromProcessEnv();
+  const supabaseBootstrap =
+    supabasePublic &&
+    `globalThis.__BIBLIARIUM_SUPABASE__=${JSON.stringify(supabasePublic)}`;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} min-h-screen font-sans`}>
+        {supabaseBootstrap ? (
+          <script
+            // Публичные ключи; без этого клиентский бандл не видит env, заданные только на Vercel после билда
+            dangerouslySetInnerHTML={{ __html: supabaseBootstrap }}
+          />
+        ) : null}
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
