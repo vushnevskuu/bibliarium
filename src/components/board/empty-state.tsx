@@ -4,15 +4,21 @@ import * as React from "react";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 
-type Props = { onSubmit?: (url: string) => void; busy?: boolean };
+type Props = {
+  onSubmit?: (url: string) => void;
+  busy?: boolean;
+  error?: string | null;
+};
 
-export function EmptyState({ onSubmit, busy }: Props) {
+export function EmptyState({ onSubmit, busy, error }: Props) {
   const [value, setValue] = React.useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const v = value.trim();
+    let v = value.trim();
     if (!v || busy || !onSubmit) return;
+    // Ensure protocol so browsers and backend both accept it
+    if (!/^https?:\/\//i.test(v)) v = `https://${v}`;
     onSubmit(v);
     setValue("");
   };
@@ -30,7 +36,7 @@ export function EmptyState({ onSubmit, busy }: Props) {
 
       <form onSubmit={handleSubmit} className="flex w-full max-w-[340px] gap-2">
         <input
-          type="url"
+          type="text"
           autoFocus
           placeholder="https://..."
           value={value}
@@ -46,6 +52,12 @@ export function EmptyState({ onSubmit, busy }: Props) {
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
         </button>
       </form>
+
+      {error && (
+        <p className="mt-3 max-w-[340px] text-xs text-destructive">
+          {error}
+        </p>
+      )}
     </motion.div>
   );
 }

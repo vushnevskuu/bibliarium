@@ -238,8 +238,9 @@ export function LinkBoard({
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const v = urlValue.trim();
+    let v = urlValue.trim();
     if (!v || busy) return;
+    if (!/^https?:\/\//i.test(v)) v = `https://${v}`;
     onSubmit(v);
     setUrlValue("");
     setAddOpen(false);
@@ -367,7 +368,8 @@ export function LinkBoard({
                 <form onSubmit={handleAddSubmit} className="flex gap-2 pt-3">
                   <input
                     ref={inputRef}
-                    type="url"
+                    type="text"
+                    inputMode="url"
                     placeholder="Paste any URL — YouTube, X, article…"
                     value={urlValue}
                     onChange={(e) => setUrlValue(e.target.value)}
@@ -401,7 +403,7 @@ export function LinkBoard({
 
         {/* Empty state — shown when not loading and no links yet, including while first link is being added */}
         {!loadingList && links.length === 0 && (
-          <EmptyState onSubmit={onSubmit} busy={busy} />
+          <EmptyState onSubmit={onSubmit} busy={busy} error={error} />
         )}
 
         {/* Grid — shown as soon as there is at least one link */}
