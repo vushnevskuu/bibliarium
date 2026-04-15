@@ -235,10 +235,10 @@ function Media({
     );
   }
 
-  if (link.provider === "web" || link.provider === "article") {
+  if ((link.provider === "web" || link.provider === "article") && link.embedUrl) {
     return (
       <WebPageIframe
-        src={link.url}
+        src={link.embedUrl}
         title={link.title || link.domain}
       />
     );

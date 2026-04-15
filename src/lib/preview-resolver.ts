@@ -269,6 +269,19 @@ export async function resolvePreview(rawInput: string): Promise<ResolvedPreview>
       oEmbedJson: null,
     };
   }
+  // Check if the site allows iframe embedding
+  const xfo = (htmlRes.headers.get("x-frame-options") || "").toUpperCase();
+  const cspHeader = htmlRes.headers.get("content-security-policy") || "";
+  const frameAncestors = (cspHeader.match(/frame-ancestors\s+([^;]+)/i)?.[1] ?? "").trim();
+  const blocksEmbed =
+    xfo.includes("DENY") ||
+    xfo.includes("SAMEORIGIN") ||
+    frameAncestors === "'none'" ||
+    (frameAncestors !== "" && !frameAncestors.includes("*"));
+  if (!blocksEmbed) {
+    embedUrl = url.toString();
+  }
+
   const contentType = htmlRes.headers.get("content-type") || "";
   if (contentType.startsWith("image/")) {
     previewType = "image";
