@@ -19,6 +19,7 @@ import {
 } from "@/lib/url-parse";
 import { TelegramEmbedIframe } from "@/components/board/telegram-embed-iframe";
 import { TwitterEmbedIframe } from "@/components/board/twitter-embed-iframe";
+import { WebPageIframe } from "@/components/board/web-page-iframe";
 import { TelegramLinkIcon } from "@/components/icons/telegram-link-icon";
 
 function hashHue(domain: string): number {
@@ -231,6 +232,15 @@ function Media({
           </div>
         ) : null}
       </div>
+    );
+  }
+
+  if (link.provider === "web" || link.provider === "article") {
+    return (
+      <WebPageIframe
+        src={link.url}
+        title={link.title || link.domain}
+      />
     );
   }
 
