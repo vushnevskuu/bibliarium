@@ -377,7 +377,7 @@ export function LinkCard({
   };
 
   return (
-    <article className="group w-full min-w-0 break-inside-avoid">
+    <article className="group w-full min-w-0 max-w-[420px] break-inside-avoid">
       <div
         role="button"
         tabIndex={0}
