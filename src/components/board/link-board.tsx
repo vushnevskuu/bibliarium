@@ -323,7 +323,7 @@ export function LinkBoard({
             ))}
           </div>
         ) : !loadingList && links.length === 0 ? (
-          <EmptyState />
+          <EmptyState onSubmit={onSubmit} busy={busy} />
         ) : (
           <div className="flex min-w-0 w-auto items-start -ml-2">
             {packedBoard.map((keys, colIdx) => (
