@@ -22,14 +22,6 @@ import { TwitterEmbedIframe } from "@/components/board/twitter-embed-iframe";
 import { WebPageIframe } from "@/components/board/web-page-iframe";
 import { TelegramLinkIcon } from "@/components/icons/telegram-link-icon";
 
-function hashHue(domain: string): number {
-  let h = 7;
-  for (let i = 0; i < domain.length; i++) {
-    h = (h * 31 + domain.charCodeAt(i)) % 360;
-  }
-  return h;
-}
-
 function showBoardLinkMetaStrip(
   link: LinkSerialized,
   isTelegramEmbed: boolean,
@@ -38,6 +30,8 @@ function showBoardLinkMetaStrip(
   if (link.provider === "youtube") return false;
   if (link.provider === "twitter") return false;
   if (link.provider === "telegram") return false;
+  // Don't show strip when we're showing a live iframe — the page speaks for itself
+  if ((link.provider === "web" || link.provider === "article") && link.embedUrl) return false;
   return true;
 }
 
@@ -235,6 +229,7 @@ function Media({
     );
   }
 
+  // Web / article: live iframe if server confirmed embedding is allowed
   if ((link.provider === "web" || link.provider === "article") && link.embedUrl) {
     return (
       <WebPageIframe
@@ -260,6 +255,7 @@ function Media({
     );
   }
 
+  // OG image — works for all providers including web/article
   if (link.imageUrl) {
     return (
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-muted">
@@ -276,15 +272,25 @@ function Media({
     );
   }
 
-  const hue = hashHue(link.domain);
+  // No image and no iframe — show a clean domain placeholder instead of a color gradient
   return (
-    <div
-      className="relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden text-white"
-      style={{
-        background: `linear-gradient(135deg, hsl(${hue} 38% 36%), hsl(${(hue + 48) % 360} 42% 28%))`,
-      }}
-    >
-      <Link2 className="h-10 w-10 opacity-35" strokeWidth={1.25} aria-hidden />
+    <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-muted/40 px-4">
+      {link.faviconUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={link.faviconUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          className="h-8 w-8 rounded-md object-contain opacity-80"
+        />
+      ) : (
+        <Link2 className="h-8 w-8 text-muted-foreground/40" strokeWidth={1.25} aria-hidden />
+      )}
+      <span className="max-w-full truncate text-xs font-medium text-muted-foreground/60">
+        {link.domain}
+      </span>
     </div>
   );
 }
