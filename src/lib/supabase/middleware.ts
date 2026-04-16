@@ -48,25 +48,37 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user: { id: string } | null = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    // If Supabase is unreachable, allow the request through — page-level auth will handle it
+    return response;
+  }
 
-  if (user && request.nextUrl.pathname === "/") {
+  const { pathname } = request.nextUrl;
+
+  // Prevent redirect loops: never redirect if already going to the target
+  if (user && pathname === "/" && !request.nextUrl.searchParams.has("no_redirect")) {
     const u = request.nextUrl.clone();
     u.pathname = "/board";
     u.search = "";
     return NextResponse.redirect(u);
   }
 
-  if (user && request.nextUrl.pathname.startsWith("/auth/signin")) {
-    return NextResponse.redirect(new URL("/board", request.url));
+  if (user && pathname.startsWith("/auth/signin")) {
+    const next = request.nextUrl.searchParams.get("next") ?? "/board";
+    // Avoid loop if next === /auth/signin
+    if (!next.startsWith("/auth/")) {
+      return NextResponse.redirect(new URL(next, request.url));
+    }
   }
 
-  if (!user && isAuthRequiredPath(request.nextUrl.pathname)) {
+  if (!user && isAuthRequiredPath(pathname)) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/auth/signin";
-    redirectUrl.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
+    redirectUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(redirectUrl);
   }
 

@@ -31,23 +31,27 @@ export default async function BoardPage() {
   try {
     await ensureDistinctLinkSortOrdersForUser(ctx.appUser.id);
 
-    const [links, userRecord] = await Promise.all([
-      prisma.link.findMany({
-        where: { userId: ctx.appUser.id },
-        orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
-      }),
-      prisma.user.findUnique({
+    const links = await prisma.link.findMany({
+      where: { userId: ctx.appUser.id },
+      orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
+    });
+
+    // Safe — column may not exist yet if migration hasn't run
+    let hasOpenaiKey = false;
+    try {
+      const userRecord = await prisma.user.findUnique({
         where: { id: ctx.appUser.id },
         select: { openaiApiKey: true },
-      }),
-    ]);
+      });
+      hasOpenaiKey = Boolean(userRecord?.openaiApiKey);
+    } catch { /* migration pending */ }
 
     return (
       <LinkBoard
         initialLinks={links.map(serializeLink)}
         currentSlug={ctx.appUser.slug}
         currentEmail={ctx.appUser.email}
-        hasOpenaiKey={Boolean(userRecord?.openaiApiKey)}
+        hasOpenaiKey={hasOpenaiKey}
       />
     );
   } catch (e) {
