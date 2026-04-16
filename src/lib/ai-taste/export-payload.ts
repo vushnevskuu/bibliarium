@@ -105,7 +105,7 @@ export async function buildTasteExportForSlug(
     profiles.push(await ensureLinkProfile(link));
   }
 
-  const master = buildMasterProfile(slug, profiles, linkIds);
+  const master = await buildMasterProfile(slug, profiles, linkIds);
 
   const json: TasteExportJson = {
     user_profile: {

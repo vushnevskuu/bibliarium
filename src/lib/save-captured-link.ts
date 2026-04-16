@@ -1,9 +1,11 @@
 import type { Link } from "@prisma/client";
 import { buildLinkAiProfile } from "@/lib/ai-taste/build-link-profile";
 import { extractMainTextFromUrl } from "@/lib/ai-taste/extract-main-text";
+import { analyzeImageForTaste, summarizeTranscript } from "@/lib/ai-taste/analyze-image";
+import { fetchYouTubeTranscript } from "@/lib/ai-taste/fetch-youtube-transcript";
 import { prisma } from "@/lib/prisma";
 import { resolvePreview } from "@/lib/preview-resolver";
-import { normalizeUrlString } from "@/lib/url-parse";
+import { normalizeUrlString, extractYouTubeId } from "@/lib/url-parse";
 import { assertUrlSafeForFetch } from "@/lib/url-security";
 
 export type SaveCapturedLinkInput = {
@@ -119,11 +121,33 @@ export async function saveCapturedLinkForUser(
     );
   }
 
+  // YouTube transcript — much richer than page text
+  if (preview.provider === "youtube") {
+    try {
+      const ytUrl = new URL(preview.url);
+      const videoId = extractYouTubeId(ytUrl);
+      if (videoId) {
+        extractedText = await fetchYouTubeTranscript(videoId);
+      }
+    } catch { /* ignore */ }
+  }
+
   const oa =
     preview.oEmbedJson &&
     typeof preview.oEmbedJson.author_name === "string"
       ? preview.oEmbedJson.author_name
       : null;
+
+  // Vision analysis — parallel with transcript, don't block on failure
+  let visionDescription: string | null = null;
+  if (preview.imageUrl) {
+    if (preview.provider === "youtube" && extractedText) {
+      // For YouTube: summarize transcript instead of analyzing thumbnail
+      visionDescription = await summarizeTranscript(extractedText);
+    } else {
+      visionDescription = await analyzeImageForTaste(preview.imageUrl);
+    }
+  }
 
   const aiProfile = buildLinkAiProfile({
     normalizedUrl: preview.normalizedUrl,
@@ -141,6 +165,8 @@ export async function saveCapturedLinkForUser(
     publishedAt: null,
     extractedText,
     oEmbedAuthor: oa,
+    visionDescription,
+    userNote: note?.trim() || null,
   });
 
   const tagsJson = JSON.stringify(

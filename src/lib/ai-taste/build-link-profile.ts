@@ -79,6 +79,8 @@ export type BuildLinkProfileInput = Pick<
   | "extractedText"
 > & {
   oEmbedAuthor?: string | null;
+  visionDescription?: string | null;
+  userNote?: string | null;
 };
 
 export function buildLinkAiProfile(row: BuildLinkProfileInput): AiLinkProfile {
@@ -121,6 +123,8 @@ export function buildLinkAiProfile(row: BuildLinkProfileInput): AiLinkProfile {
     `TYPE: ${row.provider}/${row.previewType}`,
     `SUMMARY: ${summary}`,
     topics.length ? `TOPICS: ${topics.join(", ")}` : "",
+    row.visionDescription ? `VISUAL: ${row.visionDescription}` : "",
+    row.userNote ? `USER_NOTE: ${row.userNote}` : "",
     excerptShort ? `BODY_EXCERPT: ${excerptShort}` : "",
   ]
     .filter(Boolean)
@@ -150,6 +154,8 @@ export function buildLinkAiProfile(row: BuildLinkProfileInput): AiLinkProfile {
     format_classification: row.previewType,
     language_guess: guessLanguage(),
     safety_fetch_status: excerpt ? "ok" : "partial",
+    vision_description: row.visionDescription ?? null,
+    user_note: row.userNote ?? null,
     vector_ready_text,
   };
 }

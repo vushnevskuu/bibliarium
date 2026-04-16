@@ -1,14 +1,15 @@
 import type { AiLinkProfile, AiMasterProfile } from "./types";
+import { generateTasteSummary } from "./analyze-image";
 
 function countMapAdd(m: Map<string, number>, key: string, n = 1) {
   m.set(key, (m.get(key) ?? 0) + n);
 }
 
-export function buildMasterProfile(
+export async function buildMasterProfile(
   userSlug: string,
   profiles: AiLinkProfile[],
   linkIds: string[]
-): AiMasterProfile {
+): Promise<AiMasterProfile> {
   const themeWeights = new Map<string, number>();
   const aestheticWeights = new Map<string, number>();
   const typeBreakdown: Record<string, number> = {};
@@ -57,8 +58,21 @@ export function buildMasterProfile(
 
   const topThemeLabels = top_themes.slice(0, 5).map((t) => t.label);
   const topDomains = Array.from(domains).slice(0, 5);
+  // Try LLM-generated summary — fallback to template if no API key
+  const llmSummary = profiles.length > 0
+    ? await generateTasteSummary(
+        profiles.map((p) => ({
+          title: p.title,
+          description: p.description,
+          visionDescription: p.vision_description ?? null,
+          note: p.user_note ?? null,
+        }))
+      )
+    : null;
+
   const taste_summary_paragraph =
-    profiles.length === 0
+    llmSummary ??
+    (profiles.length === 0
       ? "No items saved yet — paste URLs on the board to build a taste profile."
       : `This collector has saved ${profiles.length} item(s) across ${domains.size} domain(s). ` +
         `Recurring themes include ${topThemeLabels.join(", ") || "mixed topics"}. ` +
@@ -67,7 +81,7 @@ export function buildMasterProfile(
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3)
           .map(([k]) => k)
-          .join(", ")} content.`;
+          .join(", ")} content.`);
 
   const semantic_overview = [
     `Themes: ${topThemeLabels.join("; ") || "n/a"}`,

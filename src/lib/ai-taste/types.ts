@@ -24,6 +24,8 @@ export type AiLinkProfile = {
   format_classification: string;
   language_guess: string;
   safety_fetch_status: "ok" | "partial" | "blocked" | "unknown";
+  vision_description: string | null;
+  user_note: string | null;
   vector_ready_text: string;
 };
 
