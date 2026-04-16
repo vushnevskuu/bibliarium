@@ -6,12 +6,10 @@
 
 import OpenAI from "openai";
 
-let _client: OpenAI | null = null;
-
-function getClient(): OpenAI | null {
-  if (!process.env.OPENAI_API_KEY) return null;
-  if (!_client) _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return _client;
+function getClient(userApiKey?: string | null): OpenAI | null {
+  const key = userApiKey || process.env.OPENAI_API_KEY;
+  if (!key) return null;
+  return new OpenAI({ apiKey: key });
 }
 
 const VISION_PROMPT = `You are analyzing an image saved to a personal taste board.
@@ -25,9 +23,10 @@ Describe in 3-5 sentences:
 Be specific and vocabulary-rich. Focus on aesthetic signals useful for understanding taste.`;
 
 export async function analyzeImageForTaste(
-  imageUrl: string
+  imageUrl: string,
+  userApiKey?: string | null
 ): Promise<string | null> {
-  const client = getClient();
+  const client = getClient(userApiKey);
   if (!client) return null;
 
   try {
@@ -61,9 +60,10 @@ Be concise and vocabulary-rich.
 Transcript:`;
 
 export async function summarizeTranscript(
-  transcript: string
+  transcript: string,
+  userApiKey?: string | null
 ): Promise<string | null> {
-  const client = getClient();
+  const client = getClient(userApiKey);
   if (!client) return null;
 
   try {
@@ -91,9 +91,10 @@ Avoid generic phrases like "diverse interests" — be precise about what makes t
 Items:\n`;
 
 export async function generateTasteSummary(
-  items: { title: string | null; description: string | null; visionDescription: string | null; note: string | null }[]
+  items: { title: string | null; description: string | null; visionDescription: string | null; note: string | null }[],
+  userApiKey?: string | null
 ): Promise<string | null> {
-  const client = getClient();
+  const client = getClient(userApiKey);
   if (!client) return null;
 
   const itemLines = items

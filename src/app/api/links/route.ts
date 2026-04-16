@@ -61,12 +61,19 @@ export async function POST(request: Request) {
 
   const { url: rawUrl, collectionId } = parsed.data;
 
+  // Load user's OpenAI key — never expose it outside server
+  const userRecord = await prisma.user.findUnique({
+    where: { id: ctx.appUser.id },
+    select: { openaiApiKey: true },
+  });
+
   const result = await saveCapturedLinkForUser({
     userId: ctx.appUser.id,
     rawUrl,
     collectionId: collectionId ?? null,
     note: null,
     tags: [],
+    openaiApiKey: userRecord?.openaiApiKey ?? null,
   });
 
   if (!result.ok) {

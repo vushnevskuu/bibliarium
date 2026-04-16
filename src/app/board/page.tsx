@@ -31,22 +31,29 @@ export default async function BoardPage() {
   try {
     await ensureDistinctLinkSortOrdersForUser(ctx.appUser.id);
 
-    const links = await prisma.link.findMany({
-      where: { userId: ctx.appUser.id },
-      orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
-    });
+    const [links, userRecord] = await Promise.all([
+      prisma.link.findMany({
+        where: { userId: ctx.appUser.id },
+        orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
+      }),
+      prisma.user.findUnique({
+        where: { id: ctx.appUser.id },
+        select: { openaiApiKey: true },
+      }),
+    ]);
 
     return (
       <LinkBoard
         initialLinks={links.map(serializeLink)}
         currentSlug={ctx.appUser.slug}
         currentEmail={ctx.appUser.email}
+        hasOpenaiKey={Boolean(userRecord?.openaiApiKey)}
       />
     );
   } catch (e) {
     console.error("Database unavailable for initial load:", e);
     return (
-      <LinkBoard initialLinks={[]} currentSlug={ctx.appUser.slug} currentEmail={ctx.appUser.email} />
+      <LinkBoard initialLinks={[]} currentSlug={ctx.appUser.slug} currentEmail={ctx.appUser.email} hasOpenaiKey={false} />
     );
   }
 }

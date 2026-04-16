@@ -14,9 +14,10 @@ export type SaveCapturedLinkInput = {
   collectionId?: string | null;
   note?: string | null;
   tags?: string[];
-  /** Tab / extension hints — applied when preview omits them */
   titleHint?: string | null;
   faviconHint?: string | null;
+  /** User's own OpenAI API key — used for vision analysis, never stored here */
+  openaiApiKey?: string | null;
 };
 
 export type SaveCapturedLinkResult =
@@ -32,7 +33,7 @@ export type SaveCapturedLinkResult =
 export async function saveCapturedLinkForUser(
   input: SaveCapturedLinkInput
 ): Promise<SaveCapturedLinkResult> {
-  const { userId, rawUrl, collectionId, note, tags, titleHint, faviconHint } =
+  const { userId, rawUrl, collectionId, note, tags, titleHint, faviconHint, openaiApiKey } =
     input;
 
   try {
@@ -142,10 +143,9 @@ export async function saveCapturedLinkForUser(
   let visionDescription: string | null = null;
   if (preview.imageUrl) {
     if (preview.provider === "youtube" && extractedText) {
-      // For YouTube: summarize transcript instead of analyzing thumbnail
-      visionDescription = await summarizeTranscript(extractedText);
+      visionDescription = await summarizeTranscript(extractedText, openaiApiKey);
     } else {
-      visionDescription = await analyzeImageForTaste(preview.imageUrl);
+      visionDescription = await analyzeImageForTaste(preview.imageUrl, openaiApiKey);
     }
   }
 

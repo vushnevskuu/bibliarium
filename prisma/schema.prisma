@@ -21,6 +21,8 @@ model User {
   masterProfileJson String?
   /// When false, `/u/[slug]/ai-profile` and `/api/taste/export` are only for the signed-in owner.
   aiProfilePublic   Boolean  @default(false)
+  /// User's own OpenAI API key — stored server-side only, never exposed in API responses.
+  openaiApiKey      String?
   links             Link[]
   collections       Collection[]
   createdAt         DateTime @default(now())

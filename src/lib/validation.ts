@@ -18,6 +18,7 @@ export const patchLinkBodySchema = z.object({
 
 export const patchUserBodySchema = z.object({
   aiProfilePublic: z.boolean().optional(),
+  openaiApiKey: z.string().max(200).nullable().optional(),
 });
 
 export const extensionCaptureBodySchema = z.object({

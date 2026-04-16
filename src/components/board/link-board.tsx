@@ -113,10 +113,12 @@ export function LinkBoard({
   initialLinks,
   currentSlug,
   currentEmail,
+  hasOpenaiKey: initialHasOpenaiKey = false,
 }: {
   initialLinks: LinkSerialized[];
   currentSlug?: string;
   currentEmail?: string | null;
+  hasOpenaiKey?: boolean;
 }) {
   const router = useRouter();
   const { order: shuffleOrder, onEnter: shuffleEnter, onLeave: shuffleLeave } = useSlideLetters();
@@ -130,6 +132,9 @@ export function LinkBoard({
   const [mixBusy, setMixBusy] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [copyLabel, setCopyLabel] = React.useState<"share" | "ai" | null>(null);
+  const [hasOpenaiKey, setHasOpenaiKey] = React.useState(initialHasOpenaiKey);
+  const [openaiInput, setOpenaiInput] = React.useState("");
+  const [openaiSaving, setOpenaiSaving] = React.useState(false);
 
   const flashCopy = (kind: "share" | "ai") => {
     setCopyLabel(kind);
@@ -327,6 +332,23 @@ export function LinkBoard({
   });
 
 
+  const saveOpenaiKey = async (key: string | null) => {
+    setOpenaiSaving(true);
+    try {
+      const res = await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ openaiApiKey: key }),
+      });
+      if (res.ok) {
+        setHasOpenaiKey(Boolean(key));
+        setOpenaiInput("");
+      }
+    } finally {
+      setOpenaiSaving(false);
+    }
+  };
+
   const signOut = async () => {
     const supabase = createBrowserSupabaseClient();
     await supabase.auth.signOut();
@@ -397,6 +419,53 @@ export function LinkBoard({
                                 </button>
                               </div>
                             )}
+                            {/* OpenAI key */}
+                            <div className="border-t border-border px-2.5 py-2.5">
+                              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                OpenAI Vision
+                              </p>
+                              {hasOpenaiKey ? (
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs text-muted-foreground">✓ Key saved</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => void saveOpenaiKey(null)}
+                                    disabled={openaiSaving}
+                                    className="text-[11px] text-muted-foreground underline-offset-2 hover:text-destructive hover:underline disabled:opacity-40"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ) : (
+                                <form
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    const k = openaiInput.trim();
+                                    if (k) void saveOpenaiKey(k);
+                                  }}
+                                  className="flex gap-1.5"
+                                >
+                                  <input
+                                    type="password"
+                                    value={openaiInput}
+                                    onChange={(e) => setOpenaiInput(e.target.value)}
+                                    placeholder="sk-..."
+                                    onClick={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    disabled={openaiSaving}
+                                    className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-foreground/30 disabled:opacity-50"
+                                  />
+                                  <button
+                                    type="submit"
+                                    disabled={!openaiInput.trim() || openaiSaving}
+                                    className="h-7 shrink-0 rounded-md bg-foreground px-2.5 text-[11px] font-medium text-background disabled:opacity-30"
+                                  >
+                                    Save
+                                  </button>
+                                </form>
+                              )}
+                            </div>
+
                             <div className="border-t border-border p-1">
                               <a
                                 href="/extension"

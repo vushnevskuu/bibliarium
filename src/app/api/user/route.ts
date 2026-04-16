@@ -26,9 +26,17 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const data: { aiProfilePublic?: boolean } = {};
+  const data: { aiProfilePublic?: boolean; openaiApiKey?: string | null } = {};
   if (parsed.data.aiProfilePublic !== undefined) {
     data.aiProfilePublic = parsed.data.aiProfilePublic;
+  }
+  if (parsed.data.openaiApiKey !== undefined) {
+    // null = remove key, string = set key (basic format check)
+    const k = parsed.data.openaiApiKey;
+    if (k !== null && !k.startsWith("sk-")) {
+      return NextResponse.json({ error: "Invalid OpenAI API key format" }, { status: 400 });
+    }
+    data.openaiApiKey = k;
   }
 
   if (Object.keys(data).length === 0) {
@@ -48,6 +56,8 @@ export async function PATCH(request: Request) {
       displayName: updated.displayName,
       avatarUrl: updated.avatarUrl,
       aiProfilePublic: updated.aiProfilePublic,
+      // Return only whether a key is set — never the actual value
+      hasOpenaiKey: Boolean(updated.openaiApiKey),
     },
   });
 }
