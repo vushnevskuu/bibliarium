@@ -118,14 +118,17 @@
     if (!text) return;
     if (!/^https?:\/\//i.test(text)) return;
 
-    // Only show if user is connected
-    chrome.storage.local.get("sessionJson", (v) => {
+    chrome.storage.local.get(["sessionJson", "bibliarium_paused_until"], (v) => {
+      // Not connected
       try {
         const s = JSON.parse(v.sessionJson || "null");
         if (!s?.access_token) return;
-      } catch {
-        return;
-      }
+      } catch { return; }
+
+      // Paused for today
+      const pausedUntil = v["bibliarium_paused_until"];
+      if (typeof pausedUntil === "number" && pausedUntil > Date.now()) return;
+
       showToast(text);
     });
   });

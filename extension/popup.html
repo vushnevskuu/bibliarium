@@ -7,27 +7,44 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
+
     <!-- Not authenticated -->
     <div id="authGate" class="screen hidden">
-      <div class="brand">Bibliarium</div>
+      <p class="brand">Bibliarium</p>
       <p class="hint">Connect your account to save links to your board.</p>
-      <button type="button" id="openConnect" class="btn primary full">Connect account</button>
+      <button type="button" id="openConnect" class="btn primary">Connect account</button>
     </div>
 
-    <!-- Main save screen -->
+    <!-- Main screen -->
     <div id="main" class="screen hidden">
-      <div id="pageInfo" class="page-info">
+
+      <!-- Page preview -->
+      <div class="page-card">
         <img id="fav" class="fav" alt="" width="16" height="16" hidden />
         <div class="page-text">
           <span id="pageTitle" class="page-title">Loading…</span>
-          <span id="pageUrl" class="page-url"></span>
+          <span id="pageUrl"   class="page-url"></span>
         </div>
       </div>
 
-      <button type="button" id="saveBtn" class="btn primary full">
-        <span id="saveBtnLabel">Save to Bibliarium</span>
+      <!-- Save -->
+      <button type="button" id="saveBtn" class="btn primary">
+        <span id="saveBtnLabel">Save to board</span>
       </button>
 
+      <!-- Divider -->
+      <div class="divider"></div>
+
+      <!-- Pause row -->
+      <div class="pause-row" id="pauseRow">
+        <div class="pause-info">
+          <span class="pause-label" id="pauseLabel">Auto-save on copy</span>
+          <span class="pause-sub"  id="pauseSub">Toast appears when you copy a URL</span>
+        </div>
+        <button type="button" id="pauseBtn" class="pill"></button>
+      </div>
+
+      <!-- Error -->
       <p id="msg" class="msg hidden"></p>
     </div>
 
