@@ -399,8 +399,9 @@ export function LinkBoard({
                             )}
                             <div className="border-t border-border p-1">
                               <a
-                                href="/public/bibliarium-extension.zip"
-                                download
+                                href="/extension"
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 onClick={() => setMenuOpen(false)}
                                 className="block w-full rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
                               >
