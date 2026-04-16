@@ -20,7 +20,7 @@ export default async function PublicBoardPage({ params }: Props) {
 
   return (
     <PublicBoard
-      email={user.email}
+      handle={user.slug}
       links={links.map(serializeLink)}
     />
   );

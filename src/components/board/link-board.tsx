@@ -398,10 +398,18 @@ export function LinkBoard({
                               </div>
                             )}
                             <div className="border-t border-border p-1">
+                              <a
+                                href="/public/bibliarium-extension.zip"
+                                download
+                                onClick={() => setMenuOpen(false)}
+                                className="block w-full rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
+                              >
+                                Download extension
+                              </a>
                               <button
                                 type="button"
                                 onClick={() => void signOut()}
-                                className="w-full rounded-lg px-2.5 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                                className="mt-0.5 w-full rounded-lg px-2.5 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                               >
                                 Sign out
                               </button>

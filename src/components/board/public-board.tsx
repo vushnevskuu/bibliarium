@@ -28,10 +28,10 @@ function useMasonryCols(
 const noop = () => {};
 
 export function PublicBoard({
-  email,
+  handle,
   links,
 }: {
-  email: string | null;
+  handle: string;
   links: LinkSerialized[];
 }) {
   const gridRef = React.useRef<HTMLDivElement>(null);
@@ -53,28 +53,23 @@ export function PublicBoard({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <main className="min-w-0 px-10 pb-10 pt-10">
-        {/* Header */}
+        {/* Header — show public handle, not email */}
         <div className="mb-8 text-center">
           <p className="text-[18px] font-medium tracking-tight text-foreground">
-            {email}
+            {handle}
           </p>
         </div>
 
         {/* Masonry grid */}
-        {links.length === 0 ? (
-          <p className="text-center text-sm text-muted-foreground">No links yet.</p>
-        ) : (
-          <div ref={gridRef} className="flex items-start gap-5">
-            {columns.map((col, ci) => (
-              <div key={ci} className="flex flex-1 flex-col gap-5 min-w-0">
-                {col}
-              </div>
-            ))}
-          </div>
-        )}
-
+        <div ref={gridRef} className={links.length === 0 ? "hidden" : "flex items-start gap-5"}>
+          {columns.map((col, ci) => (
+            <div key={ci} className="flex flex-1 flex-col gap-5 min-w-0">
+              {col}
+            </div>
+          ))}
+        </div>
         {links.length === 0 && (
-          <div ref={gridRef} className="hidden" />
+          <p className="text-center text-sm text-muted-foreground">No links yet.</p>
         )}
       </main>
     </div>
