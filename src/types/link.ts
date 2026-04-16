@@ -2,6 +2,7 @@ export type LinkProvider =
   | "youtube"
   | "twitter"
   | "telegram"
+  | "instagram"
   | "image"
   | "article"
   | "web";

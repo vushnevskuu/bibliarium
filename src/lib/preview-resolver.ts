@@ -2,7 +2,10 @@ import {
   buildTelegramPostEmbedPageUrl,
   detectProvider,
   domainFromUrl,
+  extractInstagramShortcode,
   extractYouTubeId,
+  instagramEmbedUrl,
+  isInstagramHost,
   isLikelyImagePath,
   isTelegramHost,
   isTwitterHost,
@@ -220,6 +223,28 @@ export async function resolvePreview(rawInput: string): Promise<ResolvedPreview>
         embedHtml,
         embedUrl,
         oEmbedJson,
+      };
+    }
+  }
+
+  // Instagram post / reel / IGTV — embed iframe, no server-side image available
+  if (isInstagramHost(url.hostname)) {
+    const ig = extractInstagramShortcode(url);
+    if (ig) {
+      return {
+        url: url.toString(),
+        normalizedUrl: url.toString(),
+        domain,
+        title: "Post on Instagram",
+        description: null,
+        imageUrl: null,
+        faviconUrl: faviconUrl ?? "https://static.cdninstagram.com/rsrc.php/yr/r/rzWiSjZRxk5.webp",
+        siteName: "Instagram",
+        provider: "instagram",
+        previewType: "embed",
+        embedHtml: null,
+        embedUrl: instagramEmbedUrl(ig.type, ig.shortcode),
+        oEmbedJson: null,
       };
     }
   }

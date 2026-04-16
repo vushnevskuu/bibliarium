@@ -19,6 +19,7 @@ import {
 } from "@/lib/url-parse";
 import { TelegramEmbedIframe } from "@/components/board/telegram-embed-iframe";
 import { TwitterEmbedIframe } from "@/components/board/twitter-embed-iframe";
+import { InstagramEmbedIframe } from "@/components/board/instagram-embed-iframe";
 import { WebPageIframe } from "@/components/board/web-page-iframe";
 import { TelegramLinkIcon } from "@/components/icons/telegram-link-icon";
 
@@ -32,6 +33,7 @@ function showBoardLinkMetaStrip(
   if (link.provider === "telegram") return false;
   // Don't show strip when we're showing a live iframe — the page speaks for itself
   if ((link.provider === "web" || link.provider === "article") && link.embedUrl) return false;
+  if (link.provider === "instagram" && link.embedUrl) return false;
   return true;
 }
 
@@ -287,6 +289,15 @@ function Media({
     );
   }
 
+  if (link.provider === "instagram" && link.embedUrl) {
+    return (
+      <InstagramEmbedIframe
+        src={link.embedUrl}
+        title={link.title || "Post on Instagram"}
+      />
+    );
+  }
+
   // Web / article: live iframe if server confirmed embedding is allowed
   if ((link.provider === "web" || link.provider === "article") && link.embedUrl) {
     return (
@@ -330,9 +341,9 @@ function Media({
     );
   }
 
-  // No image and no iframe — show a clean domain placeholder instead of a color gradient
+  // No image and no iframe — large favicon placeholder
   return (
-    <div className="flex aspect-[16/10] w-full flex-col items-center justify-center gap-2 bg-muted/40 px-4">
+    <div className="flex aspect-[16/10] w-full flex-col items-center justify-center bg-muted/30">
       {link.faviconUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -341,14 +352,11 @@ function Media({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className="h-8 w-8 rounded-md object-contain opacity-80"
+          className="h-14 w-14 rounded-xl object-contain"
         />
       ) : (
-        <Link2 className="h-8 w-8 text-muted-foreground/40" strokeWidth={1.25} aria-hidden />
+        <Link2 className="h-10 w-10 text-muted-foreground/25" strokeWidth={1} aria-hidden />
       )}
-      <span className="max-w-full truncate text-xs font-medium text-muted-foreground/60">
-        {link.domain}
-      </span>
     </div>
   );
 }

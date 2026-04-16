@@ -53,6 +53,28 @@ export function extractYouTubeId(url: URL): string | null {
   return null;
 }
 
+export function isInstagramHost(host: string): boolean {
+  const h = host.replace(/^www\./, "").toLowerCase();
+  return h === "instagram.com" || h === "m.instagram.com";
+}
+
+export function extractInstagramShortcode(
+  url: URL
+): { type: "p" | "reel" | "tv"; shortcode: string } | null {
+  if (!isInstagramHost(url.hostname)) return null;
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (parts.length >= 2 && (parts[0] === "p" || parts[0] === "reel" || parts[0] === "tv")) {
+    const shortcode = parts[1].split("?")[0];
+    if (shortcode) return { type: parts[0] as "p" | "reel" | "tv", shortcode };
+  }
+  return null;
+}
+
+export function instagramEmbedUrl(type: "p" | "reel" | "tv", shortcode: string): string {
+  if (type === "reel") return `https://www.instagram.com/reel/${shortcode}/embed/`;
+  return `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
+}
+
 export function isTwitterHost(host: string): boolean {
   const h = host.replace(/^www\./, "").toLowerCase();
   return h === "twitter.com" || h === "x.com" || h === "mobile.twitter.com";
@@ -217,6 +239,7 @@ export function detectProvider(url: URL): LinkProvider {
   const host = url.hostname.replace(/^www\./, "").toLowerCase();
   if (extractYouTubeId(url)) return "youtube";
   if (isTwitterHost(host)) return "twitter";
+  if (isInstagramHost(host) && extractInstagramShortcode(url)) return "instagram";
   if (isTelegramHost(host) && parseTelegramPostPath(url.pathname))
     return "telegram";
   if (isLikelyImagePath(url)) return "image";
