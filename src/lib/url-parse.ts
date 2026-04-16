@@ -53,6 +53,17 @@ export function extractYouTubeId(url: URL): string | null {
   return null;
 }
 
+export function isPinterestHost(host: string): boolean {
+  const h = host.replace(/^[a-z]{2}\./, "").replace(/^www\./, "").toLowerCase();
+  return h === "pinterest.com" || h === "pin.it";
+}
+
+export function extractPinterestPinId(url: URL): string | null {
+  if (!isPinterestHost(url.hostname)) return null;
+  const m = /\/pin\/(\d+)/i.exec(url.pathname);
+  return m?.[1] ?? null;
+}
+
 export function isInstagramHost(host: string): boolean {
   const h = host.replace(/^www\./, "").toLowerCase();
   return h === "instagram.com" || h === "m.instagram.com";

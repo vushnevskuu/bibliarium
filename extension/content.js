@@ -113,6 +113,22 @@
     dismissTimer = setTimeout(removeToast, 5000);
   }
 
+  // Message from background (hotkey or icon click)
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg.type === "BIBLIARIUM_SHOW_PAGE_TOAST") {
+      // Check session first
+      chrome.storage.local.get("sessionJson", (v) => {
+        try {
+          const s = JSON.parse(v.sessionJson || "null");
+          if (!s?.access_token) { sendResponse({ ok: false }); return; }
+        } catch { sendResponse({ ok: false }); return; }
+        showToast(msg.url || window.location.href);
+        sendResponse({ ok: true });
+      });
+      return true; // async
+    }
+  });
+
   document.addEventListener("copy", () => {
     const text = window.getSelection()?.toString().trim() || "";
     if (!text) return;

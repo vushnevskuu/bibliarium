@@ -3,10 +3,12 @@ import {
   detectProvider,
   domainFromUrl,
   extractInstagramShortcode,
+  extractPinterestPinId,
   extractYouTubeId,
   instagramEmbedUrl,
   isInstagramHost,
   isLikelyImagePath,
+  isPinterestHost,
   isTelegramHost,
   isTwitterHost,
   normalizeUrlString,
@@ -225,6 +227,38 @@ export async function resolvePreview(rawInput: string): Promise<ResolvedPreview>
         oEmbedJson,
       };
     }
+  }
+
+  // Pinterest — for non-pin pages (feeds, boards) redirect to login; fetch homepage for good OG
+  if (isPinterestHost(url.hostname)) {
+    const pinId = extractPinterestPinId(url);
+    if (!pinId) {
+      // Non-pin URL (feed, board, search…) — use pinterest.com homepage OG for the nice mosaic
+      const fallbackUrl = "https://www.pinterest.com/";
+      try {
+        const homeRes = await safeFetch(fallbackUrl, { method: "GET" });
+        if (homeRes.ok) {
+          const html = await homeRes.text();
+          const og = extractFromHtml(html, new URL(fallbackUrl));
+          return {
+            url: url.toString(),
+            normalizedUrl: url.toString(),
+            domain,
+            title: og.title || "Pinterest",
+            description: og.description,
+            imageUrl: og.imageUrl,
+            faviconUrl: og.faviconHref ?? faviconUrl,
+            siteName: "Pinterest",
+            provider: "web",
+            previewType: og.imageUrl ? "og" : "fallback",
+            embedHtml: null,
+            embedUrl: null,
+            oEmbedJson: null,
+          };
+        }
+      } catch { /* fall through to normal fetch */ }
+    }
+    // Specific pin — let normal flow handle OG extraction
   }
 
   // Instagram post / reel / IGTV — embed iframe, no server-side image available

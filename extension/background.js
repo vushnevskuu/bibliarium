@@ -135,7 +135,18 @@ chrome.commands.onCommand.addListener((command) => {
   if (command !== "quick-save-tab") return;
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tab = tabs[0];
-    void quickSaveTab(tab);
+    if (!tab) return;
+    // Try to show a save toast on the page (content script)
+    chrome.tabs.sendMessage(
+      tab.id,
+      { type: "BIBLIARIUM_SHOW_PAGE_TOAST", url: tab.url, title: tab.title, faviconUrl: tab.favIconUrl },
+      (resp) => {
+        if (chrome.runtime.lastError || !resp) {
+          // Content script unavailable (chrome:// etc) — fall back to silent save
+          void quickSaveTab(tab);
+        }
+      }
+    );
   });
 });
 
