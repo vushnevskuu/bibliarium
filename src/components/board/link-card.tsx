@@ -324,10 +324,10 @@ function Media({
     );
   }
 
-  // OG image — works for all providers including web/article
+  // OG image — natural aspect ratio, capped at max-height so portrait/square images show in full
   if (link.imageUrl) {
     return (
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-muted">
+      <div className="relative w-full overflow-hidden bg-muted">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={link.imageUrl}
@@ -335,7 +335,7 @@ function Media({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className="h-full w-full object-cover"
+          className="h-auto max-h-[520px] w-full object-contain"
         />
       </div>
     );
