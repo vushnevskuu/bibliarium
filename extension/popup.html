@@ -7,38 +7,29 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <header class="hdr">
-      <img id="fav" class="fav" alt="" width="20" height="20" hidden />
-      <div class="hdr-text">
-        <h1 class="title">Bibliarium</h1>
-        <p id="pageTitle" class="page-title">Loading…</p>
-      </div>
-    </header>
-    <p id="pageUrl" class="url mono"></p>
-
-    <div id="authGate" class="gate hidden">
-      <p class="muted">Sign in once, then paste the session from the connect page into extension options.</p>
-      <button type="button" id="openConnect" class="btn primary">Open connect page</button>
-      <button type="button" id="openOptions" class="btn ghost">Extension settings</button>
+    <!-- Not authenticated -->
+    <div id="authGate" class="screen hidden">
+      <div class="brand">Bibliarium</div>
+      <p class="hint">Connect your account to save links to your board.</p>
+      <button type="button" id="openConnect" class="btn primary full">Connect account</button>
     </div>
 
-    <form id="form" class="form hidden">
-      <label class="lbl">Board / collection</label>
-      <select id="board" class="input"></select>
-
-      <label class="lbl">Tags (comma-separated)</label>
-      <input id="tags" class="input" type="text" placeholder="design, tools" maxlength="200" />
-
-      <label class="lbl">Note (optional)</label>
-      <textarea id="note" class="input ta" rows="3" maxlength="2000" placeholder="Why you’re saving this…"></textarea>
-
-      <div class="actions">
-        <button type="submit" id="saveBtn" class="btn primary">Save to board</button>
-        <a id="openApp" class="btn ghost" href="#" target="_blank" rel="noopener">Open app</a>
+    <!-- Main save screen -->
+    <div id="main" class="screen hidden">
+      <div id="pageInfo" class="page-info">
+        <img id="fav" class="fav" alt="" width="16" height="16" hidden />
+        <div class="page-text">
+          <span id="pageTitle" class="page-title">Loading…</span>
+          <span id="pageUrl" class="page-url"></span>
+        </div>
       </div>
-    </form>
 
-    <p id="msg" class="msg hidden" role="status"></p>
+      <button type="button" id="saveBtn" class="btn primary full">
+        <span id="saveBtnLabel">Save to Bibliarium</span>
+      </button>
+
+      <p id="msg" class="msg hidden"></p>
+    </div>
 
     <script src="api.js"></script>
     <script src="popup.js"></script>

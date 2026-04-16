@@ -13,7 +13,7 @@
     const v = await chrome.storage.sync.get(STORAGE.baseUrl);
     return (
       (typeof v[STORAGE.baseUrl] === "string" && v[STORAGE.baseUrl].trim()) ||
-      "http://127.0.0.1:3333"
+      "https://bibliarium.vercel.app"
     ).replace(/\/$/, "");
   }
 

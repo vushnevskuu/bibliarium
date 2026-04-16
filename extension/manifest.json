@@ -13,7 +13,8 @@
   ],
   "host_permissions": [
     "http://127.0.0.1:3333/*",
-    "http://localhost:3333/*"
+    "http://localhost:3333/*",
+    "https://bibliarium.vercel.app/*"
   ],
   "optional_host_permissions": ["https://*/*"],
   "background": {

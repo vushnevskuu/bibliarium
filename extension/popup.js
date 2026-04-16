@@ -4,134 +4,94 @@
 
   const $ = (id) => document.getElementById(id);
 
-  function showMsg(text, ok) {
-    const el = $("msg");
-    el.textContent = text;
-    el.classList.remove("hidden", "ok", "err");
-    el.classList.add(ok ? "ok" : "err");
-  }
+  function showMain() { $("main").classList.remove("hidden"); }
+  function showAuth() { $("authGate").classList.remove("hidden"); }
+  function hideAll() { ["main", "authGate"].forEach((id) => $( id).classList.add("hidden")); }
 
-  function parseTags(raw) {
-    if (!raw || !raw.trim()) return [];
-    return raw
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .slice(0, 20);
+  function domainFromUrl(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
   }
 
   async function init() {
     const base = await BibliariumApi.getBaseUrl();
-    $("openApp").href = `${base}/board`;
 
-    const tab = await chrome.tabs.query({ active: true, currentWindow: true });
-    const t = tab[0];
-    const urlEl = $("pageUrl");
-    const titleEl = $("pageTitle");
-    const fav = $("fav");
+    // Connect button
+    $("openConnect").addEventListener("click", () => {
+      chrome.tabs.create({ url: `${base}/extension/connect` });
+    });
 
-    if (t?.url) urlEl.textContent = t.url;
-    titleEl.textContent = t?.title || "Current tab";
+    // Get current tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    if (t?.favIconUrl) {
-      fav.src = t.favIconUrl;
+    // Fill page info
+    if (tab?.title) $("pageTitle").textContent = tab.title;
+    if (tab?.url) $("pageUrl").textContent = domainFromUrl(tab.url);
+    if (tab?.favIconUrl) {
+      const fav = $("fav");
+      fav.src = tab.favIconUrl;
       fav.hidden = false;
     }
 
+    // Check auth
     const session = await BibliariumApi.getSession();
     if (!session?.access_token) {
-      $("authGate").classList.remove("hidden");
-      $("openConnect").onclick = () => {
-        chrome.tabs.create({ url: `${base}/extension/connect` });
-      };
-      $("openOptions").onclick = () => chrome.runtime.openOptionsPage();
+      showAuth();
       return;
     }
 
-    $("form").classList.remove("hidden");
-
-    let me;
+    // Verify session is still valid
     try {
-      const res = await BibliariumApi.authorizedFetch("/api/extension/me", {
-        method: "GET",
-      });
-      me = await res.json();
-      if (!res.ok) throw new Error(me.error || "Session invalid");
+      const res = await BibliariumApi.authorizedFetch("/api/extension/me", { method: "GET" });
+      if (!res.ok) throw new Error("invalid");
     } catch {
-      $("authGate").classList.remove("hidden");
-      $("form").classList.add("hidden");
-      $("openConnect").onclick = () => {
-        chrome.tabs.create({ url: `${base}/extension/connect` });
-      };
-      $("openOptions").onclick = () => chrome.runtime.openOptionsPage();
+      showAuth();
       return;
     }
 
-    const boardsRes = await BibliariumApi.authorizedFetch(
-      "/api/extension/boards",
-      { method: "GET" }
-    );
-    const boardsData = await boardsRes.json();
-    const sel = $("board");
-    sel.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "— No board —";
-    sel.appendChild(opt0);
-    if (boardsRes.ok && Array.isArray(boardsData.boards)) {
-      for (const b of boardsData.boards) {
-        const o = document.createElement("option");
-        o.value = b.id;
-        o.textContent = `${b.name} (${b.linkCount})`;
-        sel.appendChild(o);
-      }
-    }
+    showMain();
 
-    const def = await chrome.storage.sync.get(
-      BibliariumApi.STORAGE.defaultCollectionId
-    );
-    if (def[BibliariumApi.STORAGE.defaultCollectionId]) {
-      sel.value = def[BibliariumApi.STORAGE.defaultCollectionId];
-    }
+    // Save button
+    const btn = $("saveBtn");
+    const label = $("saveBtnLabel");
 
-    $("form").onsubmit = async (ev) => {
-      ev.preventDefault();
-      const btn = $("saveBtn");
+    btn.addEventListener("click", async () => {
+      if (btn.disabled) return;
       btn.disabled = true;
+      label.textContent = "Saving…";
       $("msg").classList.add("hidden");
-      const collectionId = $("board").value || null;
-      const tags = parseTags($("tags").value);
-      const note = $("note").value.trim() || null;
+
       try {
         const res = await BibliariumApi.authorizedFetch("/api/extension/capture", {
           method: "POST",
           body: JSON.stringify({
-            url: t.url,
-            title: t.title,
-            faviconUrl: t.favIconUrl || null,
-            note,
+            url: tab?.url || "",
+            title: tab?.title || null,
+            faviconUrl: tab?.favIconUrl || null,
+            note: null,
             selectedText: null,
             source: "popup",
-            collectionId,
-            tags,
+            collectionId: null,
+            tags: [],
           }),
         });
+
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
-        if (data.duplicate) {
-          showMsg("Already on your board.", true);
-        } else {
-          showMsg("Saved.", true);
-        }
-        await chrome.storage.sync.set({
-          [BibliariumApi.STORAGE.defaultCollectionId]: collectionId || "",
-        });
+
+        // Success
+        btn.classList.add("success");
+        label.textContent = data.duplicate ? "✓ Already on board" : "✓ Saved!";
+
+        setTimeout(() => window.close(), 1400);
       } catch (err) {
-        showMsg(err.message || "Save failed", false);
-      } finally {
         btn.disabled = false;
+        btn.classList.remove("success");
+        label.textContent = "Save to Bibliarium";
+        const msg = $("msg");
+        msg.textContent = err.message || "Save failed";
+        msg.classList.remove("hidden");
       }
-    };
+    });
   }
 
   void init();
