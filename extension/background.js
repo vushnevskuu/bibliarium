@@ -97,6 +97,40 @@ async function quickSaveTab(tab) {
   }
 }
 
+// Handle save request from content script (copy-event toast)
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type !== "BIBLIARIUM_QUICK_SAVE") return false;
+
+  void (async () => {
+    const session = await BibliariumApi.getSession();
+    if (!session?.access_token) {
+      sendResponse({ notConnected: true });
+      return;
+    }
+    try {
+      const data = await BibliariumApi.captureWithQueue({
+        url: msg.url || "",
+        title: msg.title || null,
+        faviconUrl: msg.faviconUrl || null,
+        note: null,
+        selectedText: null,
+        source: "copy-event",
+        collectionId: null,
+        tags: [],
+      });
+      sendResponse({ ok: true, duplicate: Boolean(data.duplicate) });
+    } catch (e) {
+      if (e && e.message === "QUEUED_OFFLINE") {
+        sendResponse({ ok: true, queued: true });
+      } else {
+        sendResponse({ ok: false, error: e?.message || "Save failed" });
+      }
+    }
+  })();
+
+  return true; // keep channel open for async sendResponse
+});
+
 chrome.commands.onCommand.addListener((command) => {
   if (command !== "quick-save-tab") return;
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
