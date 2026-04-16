@@ -3,6 +3,7 @@ export type LinkProvider =
   | "twitter"
   | "telegram"
   | "instagram"
+  | "pinterest-brand"
   | "image"
   | "article"
   | "web";

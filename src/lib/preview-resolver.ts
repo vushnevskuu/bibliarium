@@ -233,32 +233,30 @@ export async function resolvePreview(rawInput: string): Promise<ResolvedPreview>
   if (isPinterestHost(url.hostname)) {
     const pinId = extractPinterestPinId(url);
     if (!pinId) {
-      // Non-pin URL (feed, board, search…) — use pinterest.com homepage OG for the nice mosaic
-      const fallbackUrl = "https://www.pinterest.com/";
-      try {
-        const homeRes = await safeFetch(fallbackUrl, { method: "GET" });
-        if (homeRes.ok) {
-          const html = await homeRes.text();
-          const og = extractFromHtml(html, new URL(fallbackUrl));
-          return {
-            url: url.toString(),
-            normalizedUrl: url.toString(),
-            domain,
-            title: og.title || "Pinterest",
-            description: og.description,
-            imageUrl: og.imageUrl,
-            faviconUrl: og.faviconHref ?? faviconUrl,
-            siteName: "Pinterest",
-            provider: "web",
-            previewType: og.imageUrl ? "og" : "fallback",
-            embedHtml: null,
-            embedUrl: null,
-            oEmbedJson: null,
-          };
-        }
-      } catch { /* fall through to normal fetch */ }
+      // Non-pin URL (feed, board, search) — Pinterest blocks iframes (SAMEORIGIN)
+      // and redirects server requests to login. Show a styled brand card.
+      const pathParts = url.pathname.split("/").filter(Boolean);
+      const section = pathParts[0] || "";
+      const title = section
+        ? `Pinterest · ${section.replace(/-/g, " ")}`
+        : "Pinterest";
+      return {
+        url: url.toString(),
+        normalizedUrl: url.toString(),
+        domain,
+        title,
+        description: "Discover ideas on Pinterest",
+        imageUrl: null,
+        faviconUrl: "https://s.pinimg.com/webapp/logo_transparent_144x144-3da7a67b.png",
+        siteName: "Pinterest",
+        provider: "pinterest-brand" as LinkProvider,
+        previewType: "fallback" as PreviewType,
+        embedHtml: null,
+        embedUrl: null,
+        oEmbedJson: null,
+      };
     }
-    // Specific pin — let normal flow handle OG extraction
+    // Specific pin — normal OG extraction works fine
   }
 
   // Instagram post / reel / IGTV — embed iframe, no server-side image available

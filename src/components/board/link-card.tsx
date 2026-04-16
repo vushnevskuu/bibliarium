@@ -34,6 +34,7 @@ function showBoardLinkMetaStrip(
   // Don't show strip when we're showing a live iframe — the page speaks for itself
   if ((link.provider === "web" || link.provider === "article") && link.embedUrl) return false;
   if (link.provider === "instagram" && link.embedUrl) return false;
+  if (link.provider === "pinterest-brand") return false;
   return true;
 }
 
@@ -285,6 +286,29 @@ function Media({
             X
           </div>
         ) : null}
+      </div>
+    );
+  }
+
+  // Pinterest non-pin pages — branded card (iframe blocked by SAMEORIGIN)
+  if (link.provider === "pinterest-brand") {
+    return (
+      <div
+        className="relative flex aspect-[4/3] w-full flex-col items-center justify-center gap-3 overflow-hidden"
+        style={{ background: "linear-gradient(145deg, #E60023 0%, #ad081b 100%)" }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="https://s.pinimg.com/webapp/logo_transparent_144x144-3da7a67b.png"
+          alt="Pinterest"
+          className="h-16 w-16 drop-shadow-lg"
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+        />
+        <span className="text-sm font-semibold tracking-tight text-white/90">
+          {link.title || "Pinterest"}
+        </span>
       </div>
     );
   }
