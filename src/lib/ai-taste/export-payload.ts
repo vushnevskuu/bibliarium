@@ -77,7 +77,8 @@ async function ensureLinkProfile(
 // TasteDossierV2 re-exported for API consumers
 export type { TasteDossierV2 };
 
-export type TasteExportJson = TasteDossierV2 & {
+export type TasteExportJson = Omit<TasteDossierV2, "taste_summary"> & {
+  taste_summary: import("./types").TasteProfileSummary;
   // Backward compat fields
   user_profile: {
     slug: string;
@@ -137,6 +138,30 @@ export async function buildTasteExportForSlug(
 
   const master = await buildMasterProfile(slug, profiles, linkIds, resolvedKey);
 
+  type MasterWithExtras = AiMasterProfile & {
+    taste_summary?: TasteExportJson["taste_summary"];
+    taste_psychology?: import("./types").TastePsychology | null;
+  };
+  const masterExt = master as MasterWithExtras;
+
+  const tasteSummary: TasteExportJson["taste_summary"] = masterExt.taste_summary ?? {
+    strong_signals: [],
+    emerging_signals: [],
+    weak_hypotheses: [],
+    visual_preferences: master.top_aesthetics.map(a => a.label),
+    conceptual_preferences: [],
+    emotional_preferences: [],
+    cultural_gravity: [],
+    preference_axes: { mainstream_vs_niche: 0, loud_vs_quiet: 0, utility_vs_aesthetic: 0, literal_vs_interpretive: 0, clean_vs_textured: 0, corporate_vs_independent: 0 },
+    likely_dislikes: [],
+    likely_likes_more_of: [],
+    evidence_backed_clusters: master.clusters.map(c => ({ label: c.label, description: c.label, evidence_item_indices: [], strength: 0.5 })),
+    profile_summary_short: master.taste_summary_paragraph,
+    profile_summary_rich: master.taste_summary_paragraph,
+    vector_ready_text: master.semantic_overview,
+    confidence: 0.5,
+  };
+
   const dossier: TasteDossierV2 = {
     profile_id: user.slug,
     profile_version: "taste_dossier_v2",
@@ -159,23 +184,8 @@ export async function buildTasteExportForSlug(
       has_transcripts: profiles.some(p => p.source_kind === "video" && p.confidence > 0.4),
     },
     saved_items: profiles,
-    taste_summary: (master as unknown as { taste_summary: TasteExportJson["taste_summary"] }).taste_summary ?? {
-      core_attraction: master.top_themes.map(t => t.label),
-      recurring_patterns: [],
-      visual_preferences: master.top_aesthetics.map(a => a.label),
-      conceptual_preferences: [],
-      emotional_preferences: [],
-      cultural_gravity: [],
-      preference_axes: { mainstream_vs_niche: 0, loud_vs_quiet: 0, utility_vs_aesthetic: 0, literal_vs_interpretive: 0, clean_vs_textured: 0, corporate_vs_independent: 0 },
-      likely_likes_more_of: [],
-      likely_dislikes: [],
-      evidence_backed_clusters: master.clusters.map(c => ({ label: c.label, description: c.label, evidence_item_indices: [], strength: 0.5 })),
-      identity_read: "",
-      profile_summary_short: master.taste_summary_paragraph,
-      profile_summary_rich: master.taste_summary_paragraph,
-      vector_ready_text: master.semantic_overview,
-      confidence: 0.5,
-    },
+    taste_summary: tasteSummary,
+    taste_psychology: masterExt.taste_psychology ?? null,
   };
 
   const json: TasteExportJson = {

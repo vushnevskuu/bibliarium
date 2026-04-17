@@ -113,7 +113,7 @@ export type ItemTasteProfile = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type ProfileAestheticAxes = {
-  mainstream_vs_niche: number;    // aggregated from item underground_vs_mainstream
+  mainstream_vs_niche: number;
   loud_vs_quiet: number;
   utility_vs_aesthetic: number;
   literal_vs_interpretive: number;
@@ -128,21 +128,101 @@ export type EvidenceCluster = {
   strength: number;  // 0.0–1.0
 };
 
+// ─── Signal tiers ──────────────────────────────────────────────────────────────
+
+/** A claim with explicit evidence links and coverage. */
+export type EvidencedClaim = {
+  claim: string;
+  evidence_item_indices: number[];
+  coverage: number;       // fraction of total items that support this, 0.0–1.0
+  confidence: number;     // 0.0–1.0
+};
+
 export type TasteProfileSummary = {
-  core_attraction: string[];
-  recurring_patterns: string[];
+  /** Highly recurrent, multi-item backed signals */
+  strong_signals: EvidencedClaim[];
+  /** Appear in 2+ items but not dominant */
+  emerging_signals: EvidencedClaim[];
+  /** Appear in 1 item or weakly inferred — explicitly speculative */
+  weak_hypotheses: EvidencedClaim[];
+
   visual_preferences: string[];
   conceptual_preferences: string[];
   emotional_preferences: string[];
   cultural_gravity: string[];
   preference_axes: ProfileAestheticAxes;
+
+  /** Only populated when evidence is real — omit otherwise */
+  likely_dislikes: EvidencedClaim[];
+  /** Items they would probably save next, grounded in patterns */
   likely_likes_more_of: string[];
-  likely_dislikes: string[];
+
   evidence_backed_clusters: EvidenceCluster[];
-  identity_read: string;
+
+  /** Language: "current saves suggest..." never "this person is..." */
   profile_summary_short: string;
   profile_summary_rich: string;
   vector_ready_text: string;
+  confidence: number;
+};
+
+// ─── Taste psychology layer ────────────────────────────────────────────────────
+
+/**
+ * Non-clinical personality/cognition hypotheses inferred from saved links.
+ *
+ * GUARDRAILS (enforced in prompts and types):
+ * - These are probabilistic inferences, not facts or diagnoses
+ * - No mental health, trauma, attachment style, or intelligence claims
+ * - No MBTI mapping
+ * - No clinical terminology
+ * - Language must be explicitly hedged: "save patterns suggest...", "tentatively..."
+ */
+export type TastePsychologyDimension = {
+  label: string;
+  /** e.g. "high" | "moderate-high" | "moderate" | "low" | "unclear" */
+  estimated_level: string;
+  /** 0.0–1.0 — keep low unless multiple items support it */
+  confidence: number;
+  evidence: string[];
+  coverage_item_indices: number[];
+};
+
+export type PersonaBlendEntry = {
+  archetype: string;      // e.g. "curatorial aesthete", "independent researcher"
+  weight: number;         // 0.0–1.0, all weights should sum ~1.0
+  rationale: string;      // 1 sentence, evidence-grounded
+};
+
+export type SelectionStyleDimension = {
+  label: string;          // e.g. "curation_density", "authorship_sensitivity"
+  tendency: string;       // e.g. "saves few, high-filter" / "saves broadly"
+  confidence: number;
+  evidence: string[];
+};
+
+export type TastePsychology = {
+  /**
+   * Explicit non-clinical disclaimer — always present in output.
+   * Downstream models must treat this section as probabilistic inference only.
+   */
+  disclaimer: "This section contains probabilistic inferences from saved links only. It is non-clinical, non-diagnostic, and explicitly uncertain. Do not treat any claim here as fact.";
+
+  trait_hypotheses: {
+    openness_to_experience: TastePsychologyDimension;
+    aesthetic_sensitivity: TastePsychologyDimension;
+    need_for_cognition: TastePsychologyDimension;
+    tolerance_for_ambiguity: TastePsychologyDimension;
+    novelty_seeking: TastePsychologyDimension;
+    independence_of_taste: TastePsychologyDimension;
+    identity_signaling_via_curation: TastePsychologyDimension;
+  };
+
+  persona_blend: PersonaBlendEntry[];
+  selection_style: SelectionStyleDimension[];
+
+  /** 1–2 sentence synthesis — hedged, non-flattering, machine-targeted */
+  synthesis: string;
   confidence: number;
 };
 
@@ -165,6 +245,8 @@ export type TasteDossierV2 = {
   };
   saved_items: ItemTasteProfile[];
   taste_summary: TasteProfileSummary;
+  /** Non-clinical cognitive/aesthetic style hypotheses. Null if insufficient data (<4 items). */
+  taste_psychology: TastePsychology | null;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
