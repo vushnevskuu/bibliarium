@@ -41,14 +41,16 @@ STRICT RULES:
 7. Do not infer humor/meme motive from odd subjects; prefer execution_read / stylistic_signals over depicted nouns
 8. FORBIDDEN as recurring_visual_signals labels unless 3+ DISTINCT evidence indices AND the label names a visible graphic device (not a cause/topic):
    recycled / recycling / sustainability / eco / circular / upcycling / carbon / climate / "materials innovation" / packaging-as-topic / vague buckets like "mixed media design", "contemporary design", "visual storytelling"
-9. PREFERRED recurring labels (mix as appropriate): authorship level, polish (raw/lo-fi/refined), linework/render read, oddity, graphic attitude (flat/graphic/maximal), internet-native / subcultural surface, texture/grain, composition pattern — tie each label to evidence indices only
-10. Banned filler words: unique, creative vision, meaningful, journey, resonates, soulful, iconic, curated, deep narrative, innovation (unless literal in inputs)
-11. Thin evidence → fewer signals, lower confidence, shorter summary
-12. No personality language
+9. PREFERRED recurring labels (concrete, recommendation-useful): authored / non-template graphic culture, rough-vs-polished balance, linework & contour quality, graphic attitude, odd-but-controlled imagery, low-polish intentional, subcultural / indie / internet-native feel, poster-like / editorial / zine-like / graphic-reference qualities — each tied to evidence indices
+10. BANNED weak abstractions (never as labels or in summary): "low authorship", "high authorship" as standalone, "inventory-like", "inventory tone", "mixed polish aesthetic", "mixed polish", "unique visual styles", "visual references" without a graphic modifier, "low information density" alone, any label that would NOT help pick the next reference image
+11. RECOMMENDATION TEST: each recurring_visual_signals.label must answer "what would we search for next?" — if not, omit it.
+12. Banned filler words: unique, creative vision, meaningful, journey, resonates, soulful, iconic, curated, deep narrative, innovation (unless literal in inputs)
+13. Thin evidence → fewer signals, lower confidence, shorter summary
+14. No personality language
 
 OUTPUT valid JSON:
 {
-  "summary_short": "1-2 sentences starting with 'Current saves suggest...' Flat, inventory-like; co-occurrence only.",
+  "summary_short": "1-2 sentences starting with 'Current saves suggest...' Name recurring graphic/stylistic co-occurrences (authored / non-template / linework / palette / attitude), not meta-inventory language.",
   "recurring_visual_signals": [
     { "label": "...", "strength": 0.0, "confidence": 0.0, "coverage_count": 0, "evidence_item_indices": [] }
   ],
@@ -119,6 +121,7 @@ ABSOLUTE GUARDRAILS:
 - Omit persona_blend entirely (return []) unless you have 4+ items with clear, redundant evidence
 - When evidence is thin: return empty trait_hypotheses
 - For any emitted trait: estimated_level and confidence must each be > 0.08 (use OMIT instead of emitting zeros)
+- NEVER emit low openness_to_experience or low aesthetic_engagement from sparse data, mixed routing, or "conservative curation" guesses — when evidence is ambiguous, OMIT those traits entirely instead of downward estimates
 
 OUTPUT valid JSON:
 {
@@ -135,7 +138,7 @@ const MASTER_SUMMARY_PROMPT = `Merge the given profile fragments into a master s
 Inputs: visual profile summary, cultural profile summary, utility profile notes, save behavior data.
 
 RULES:
-1. profile_summary_short: 1-2 sentences, "Current saves suggest..." — inventory co-occurrences, no thesis
+1. profile_summary_short: 1-2 sentences, "Current saves suggest..." — name recurring graphic/stylistic co-occurrences only; no thesis, no "inventory" framing
 2. profile_summary_rich: 3-4 short sentences max; each sentence must map to an input fragment (visual / cultural / utility split). Drop any clause you cannot trace to inputs.
    - Visual lane = style/execution/palette/composition patterns only — never merge utility tool names into visual language
    - If Psychology input says NONE, write zero sentences about personality, tendencies, or "openness"
@@ -162,6 +165,26 @@ const SUBJECT_TOPIC_VISUAL_RE =
 
 const VAGUE_AGGREGATE_RE =
   /mixed\s*media\s*design|\bmixed\s*media\b(?!\s+collage)|\bcontemporary\s+design\b|\bvisual\s+storytelling\b|unique\s+aesthetic|creative\s+vision|^design$/i;
+
+/** Profile / LLM noise that reads as critique or empty abstraction — drop from signals + summaries */
+const BANNED_WEAK_PROFILE_LABEL_RE =
+  /\b(low|high)\s+authorship\b|authorship-surface-low|inventory[-\s]?like|inventory\s+tone|mixed\s+polish|polish\s+aesthetic\b|generic\s+unique|unique\s+visual\s+styles?\b|\bvisual\s+references?\b(?!\s+(with|showing|using|in\s))|low\s+openness|openness\s*\(?low|aesthetic\s+experience\s*\(?low|low-value|weak\s+abstraction/i;
+
+function isBannedWeakProfileLabel(label: string): boolean {
+  return BANNED_WEAK_PROFILE_LABEL_RE.test(label);
+}
+
+/** Labels must help pick the next reference (graphic/stylistic), not audit tone */
+function passesRecommendationUsefulness(label: string): boolean {
+  const L = label.trim().toLowerCase();
+  if (L.length < 8) return false;
+  if (isBannedWeakProfileLabel(L)) return false;
+  const concrete =
+    /linework|contour|palette|halftone|grain|illustration|poster|editorial|zine|risograph|riso|collage|vector|raster|flat|high-contrast|internet-native|subcultural|indie|graphic|composition|crop|type|slug|typograph|letterform|authored|non-template|anti-template|lo-fi|raw|rough|vernacular|odd|controlled|hand|ink|brush|figure|ground|reference|material|texture|layered|maximal|minimal|brutal|energy|surface|attitude|cropped|still|frame|lighting|symmetr|asymmetr/i;
+  if (concrete.test(L)) return true;
+  const words = L.split(/\s+/).length;
+  return (words >= 3 && L.length >= 22) || (words >= 2 && L.length >= 28);
+}
 
 function isTopicSubjectVisualLabel(s: string): boolean {
   return SUBJECT_TOPIC_VISUAL_RE.test(s);
@@ -195,12 +218,14 @@ function visualLanguageSignalsForAggregate(item: SavedItemV4): string[] {
   const out = tags.filter(s => !isTopicSubjectVisualLabel(s) && !isVagueAggregateLabel(s));
   const auth = vl.visual_authorship ?? 0;
   const odd = vl.visual_oddity ?? 0;
-  if (auth >= 0.62) out.push("authorship-surface-high");
-  else if (auth <= 0.3) out.push("authorship-surface-low");
-  if (odd >= 0.55) out.push("visual-oddity-high");
-  if (vl.polish_level === "raw" || vl.polish_level === "lo-fi") out.push("polish-raw-or-lofi");
+  if (auth >= 0.52) out.push("authored-graphic-surface");
+  if (odd >= 0.52) out.push("visual-oddity-high");
+  if (vl.polish_level === "raw" || vl.polish_level === "lo-fi") out.push("intentional-low-polish");
   if (vl.polish_level === "refined" || vl.polish_level === "highly-polished") out.push("polish-refined");
-  if (vl.image_type && vl.image_type !== "unknown") out.push(`image-type:${vl.image_type}`);
+  const ex = vl.graphic_execution_read?.toLowerCase() ?? "";
+  if (/linework|contour|ink|brush|stroke|halftone|grain|collage|poster|type|letterform/i.test(ex)) {
+    out.push("execution-led-graphic");
+  }
   return Array.from(new Set(out));
 }
 
@@ -208,12 +233,44 @@ function filterSignalsAgainstTopicAndVagueness(signals: EvidencedSignal[]): Evid
   return signals.filter(s => {
     const L = s.label;
     if (isVagueAggregateLabel(L)) return false;
+    if (isBannedWeakProfileLabel(L)) return false;
     if (isTopicSubjectVisualLabel(L)) {
       const uniq = new Set(s.evidence_item_indices ?? []).size;
       return uniq >= 3 && (s.coverage_count ?? uniq) >= 3;
     }
     return true;
   });
+}
+
+function scrubBannedPhrasesFromText(text: string): string {
+  let t = text;
+  t = t.replace(/\binventory[-\s]?like\b/gi, "graphic");
+  t = t.replace(/\bmixed\s+polish\b|\bmixed\s+polish\s+aesthetic\b/gi, "raw-versus-polished graphic balance");
+  t = t.replace(/\blow\s+authorship\b/gi, "authored non-template graphics");
+  t = t.replace(/\blow\s+openness\b|\bopenness\s*\(?low\b|\blow\s+openness\s+to\b/gi, "");
+  t = t.replace(/\baesthetic\s+experience\s*\(?low\b/gi, "");
+  t = t.replace(/\s{2,}/g, " ").replace(/\s+([.,;:])/g, "$1").trim();
+  return t;
+}
+
+function sanitizeVisualProfileCopy(vp: VisualProfile): VisualProfile {
+  const recurring = filterSignalsAgainstTopicAndVagueness(vp.recurring_visual_signals ?? []);
+  const weak = vp.weak_visual_hypotheses?.length
+    ? filterSignalsAgainstTopicAndVagueness(vp.weak_visual_hypotheses)
+    : undefined;
+  const likes = (vp.likely_visual_likes_more_of ?? []).filter(
+    x => !isBannedWeakProfileLabel(x) && passesRecommendationUsefulness(x),
+  );
+  return {
+    ...vp,
+    summary_short: scrubBannedPhrasesFromText(vp.summary_short),
+    recurring_visual_signals: recurring,
+    weak_visual_hypotheses: weak?.length ? weak : undefined,
+    likely_visual_likes_more_of: likes,
+    vector_ready_text: scrubBannedPhrasesFromText(
+      recurring.length ? recurring.map(s => s.label).join("; ") : vp.vector_ready_text,
+    ),
+  };
 }
 
 function serializeItemsForVisualAggregation(items: SavedItemV4[], indices: number[]): string {
@@ -433,7 +490,12 @@ function partitionVisualSignalsFromLLM(vp: VisualProfile): VisualProfile {
     recurring_visual_signals: recurringF,
     weak_visual_hypotheses: weakF.length ? weakF : undefined,
   };
-  return coerceVisualProfileConfidence(next);
+  return coerceAndSanitizeVisual(next);
+}
+
+/** Heuristic LLM fallback — same hygiene as partitioned LLM output */
+function coerceAndSanitizeVisual(vp: VisualProfile): VisualProfile {
+  return coerceVisualProfileConfidence(sanitizeVisualProfileCopy(vp));
 }
 
 function coerceVisualProfileConfidence(vp: VisualProfile): VisualProfile {
@@ -469,7 +531,15 @@ function normalizePsychology(
       ) {
         return null;
       }
-      const el = Math.min(0.64, Math.max(0.16, el0 ?? 0.22));
+      const elRaw = el0 ?? 0.22;
+      if (
+        (t.trait === "openness_to_experience" || t.trait === "aesthetic_engagement") &&
+        elRaw < 0.42 &&
+        (itemCount < 8 || cov < 5)
+      ) {
+        return null;
+      }
+      const el = Math.min(0.64, Math.max(0.16, elRaw));
       const cf = Math.min(cov >= 5 ? 0.5 : 0.42, Math.max(0.24, cf0 ?? 0.28));
       return {
         ...t,
@@ -700,7 +770,7 @@ export async function buildMasterProfile(
     visualProfile = vpRaw
       ? partitionVisualSignalsFromLLM(vpRaw)
       : visualIndicesStrict.length
-        ? coerceVisualProfileConfidence(fallbackVisualProfile(profiles, visualIndicesStrict))
+        ? coerceAndSanitizeVisual(fallbackVisualProfile(profiles, visualIndicesStrict))
         : null;
     culturalProfile = cpRaw ?? (culturalIndices.length ? fallbackCulturalProfile(profiles, culturalIndices) : null);
     utilityProfile = upRaw ? { ...upRaw, should_not_contaminate_visual_profile: true as const } : (utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null);
@@ -723,7 +793,7 @@ export async function buildMasterProfile(
       : null;
   } else {
     visualProfile = visualIndicesStrict.length
-      ? coerceVisualProfileConfidence(fallbackVisualProfile(profiles, visualIndicesStrict))
+      ? coerceAndSanitizeVisual(fallbackVisualProfile(profiles, visualIndicesStrict))
       : null;
     culturalProfile = culturalIndices.length ? fallbackCulturalProfile(profiles, culturalIndices) : null;
     utilityProfile = utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null;

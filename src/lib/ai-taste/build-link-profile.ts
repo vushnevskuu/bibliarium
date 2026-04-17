@@ -249,12 +249,40 @@ function itemKindFromLlm(llm: LlmItemResult): ItemKind {
 
 function authorshipNumeric(auth?: string): number {
   const a = (auth ?? "neutral").toLowerCase();
-  if (a.includes("strongly")) return 0.88;
-  if (a.includes("authored") && !a.includes("template")) return 0.72;
-  if (a.includes("neutral")) return 0.48;
-  if (a.includes("template")) return 0.22;
-  if (a.includes("algorithmic")) return 0.12;
+  if (/\bnon[\s-]*template\b/.test(a)) return 0.68;
+  if (/\balgorithmic\b/.test(a)) return 0.12;
+  if (/\btemplate\b/.test(a)) return 0.22;
+  if (/strongly\s*authored|strongly-authored/.test(a)) return 0.88;
+  if (/\bauthored\b/.test(a)) return 0.72;
+  if (/\bneutral\b/.test(a)) return 0.48;
   return 0.45;
+}
+
+/** Vision often says "neutral" for non-stock illustration; boost from tokens + execution so authored boards don't read as "low authorship". */
+function authorshipScoreFromVision(vp: NonNullable<BuildLinkProfileInput["visualProfile"]>): number {
+  let base = authorshipNumeric(vp.authorship_signal);
+  const a = (vp.authorship_signal ?? "").toLowerCase();
+  const isTemplateOrStock =
+    /\balgorithmic\b/.test(a) ||
+    (/\b(stock|template)\b/.test(a) && !/\bnon[\s-]*template\b/.test(a));
+  if (isTemplateOrStock) return Math.min(base, 0.34);
+
+  const sig = [...(vp.stylistic_signals ?? [])].join(" ").toLowerCase();
+  const depicted = (vp.depicted ?? "").toLowerCase();
+  const prose = `${vp.execution_read ?? ""} ${vp.non_subject_attraction ?? ""} ${vp.visual_attraction ?? ""}`.toLowerCase();
+  const blob = `${sig} ${prose} ${depicted}`;
+  const authoredCue =
+    /authored|hand-?made|anti-?template|non-?template|editorial|zine|riso|risograph|letterpress|illustration|linework|contour|brush\s*ink|marker|collage|graphic\s*attitude|poster-?like|vernacular|internet-native|subcultural|indie|diy|lo-fi|raw-graphic|halftone|grain|xerox|photocopy|bespoke|custom\s+type|title\s+treatment|title\s+card|film\s+still|cine(still|matograph)|director|scene\s+composition|shader|generative|webgl|glsl|ray-?marched|3d\s+(scene|render)(?!\s+stock)/i;
+  if (authoredCue.test(blob)) base = Math.max(base, 0.58);
+  if (/strongly\s*authored/i.test(a)) base = Math.max(base, 0.86);
+  if (/\bauthored\b/i.test(a) && !isTemplateOrStock) base = Math.max(base, 0.7);
+
+  const it = (vp.image_type ?? "").toLowerCase();
+  if (/(illustration|graphic-design|collage|poster|pin-board|mixed|3d-render|film-still|photography)/.test(it)) base = Math.max(base, 0.54);
+  const execLen = (vp.execution_read ?? "").trim().length;
+  if (execLen >= 90 && !/\b(stock|template\s+photo|shutterstock)\b/i.test(prose)) base = Math.max(base, 0.55);
+
+  return Math.min(1, Math.max(0.14, base));
 }
 
 function polishFromAuthorship(auth?: string, novelty = 0.5): PolishLevel {
@@ -264,6 +292,19 @@ function polishFromAuthorship(auth?: string, novelty = 0.5): PolishLevel {
   if (a.includes("strongly authored")) return novelty > 0.55 ? "raw" : "lo-fi";
   if (a.includes("authored")) return novelty > 0.62 ? "raw" : "lo-fi";
   return "mixed";
+}
+
+function polishLevelFromVision(
+  authSig: string | undefined,
+  novelty: number,
+  stylistic: string[],
+): PolishLevel {
+  const s = stylistic.join(" ").toLowerCase();
+  if (/corporate\s+clean|saas\s+ui|dashboard\s+ui|minimal\s+ui|template\s+layout/i.test(s)) return "refined";
+  if (/lo-fi|raw-graphic|grain|halftone|riso|zine|xerox|photocopy|rough\s+ink|marker|collage|diy|scrappy/i.test(s)) {
+    return novelty > 0.48 ? "raw" : "lo-fi";
+  }
+  return polishFromAuthorship(authSig, novelty);
 }
 
 async function extractWithLlm(
@@ -434,6 +475,7 @@ function buildVisualLayer(
     const novelty = typeof vp.visual_novelty === "number" ? Math.min(1, Math.max(0, vp.visual_novelty)) : 0.4;
     const sigs = stripTopicStylisticTokens(filterTags([...(vp.stylistic_signals ?? [])]));
     if (vp.controlled_weirdness?.trim()) sigs.push(vp.controlled_weirdness.trim().slice(0, 48));
+    const authScore = authorshipScoreFromVision(vp);
     return {
       present: true,
       importance: Math.min(1, Math.max(0.2, (vp.confidence ?? 0.55) * 0.65 + novelty * 0.35)),
@@ -442,8 +484,8 @@ function buildVisualLayer(
       composition: vp.composition ? [vp.composition] : [],
       color_tone: colorTone.length ? colorTone : (vp.color_profile?.dominant_hues ?? []),
       texture_materiality: vp.materiality ?? [],
-      polish_level: polishFromAuthorship(vp.authorship_signal, novelty),
-      visual_authorship: authorshipNumeric(vp.authorship_signal),
+      polish_level: polishLevelFromVision(vp.authorship_signal, novelty, sigs),
+      visual_authorship: authScore,
       visual_oddity: novelty,
       stylistic_signals: stripTopicStylisticTokens(filterTags(sigs)),
       cultural_signal: [],

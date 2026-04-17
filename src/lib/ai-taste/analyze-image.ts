@@ -67,7 +67,9 @@ vernacular-web, anti-template, editorial, industrial, tactile, archive-like, lo-
 poster-like, object-photo, ui-screenshot, flat-color-blocks, high-contrast, low-information-density
 
 CALIBRATION:
-- authorship_signal: strongly authored | authored | neutral | template-like | algorithmic — default toward neutral when unclear
+- authorship_signal: strongly authored | authored | neutral | template-like | algorithmic
+  → Do NOT choose "neutral" when the frame is clearly hand-drawn, poster/graphic, collage, zine-like, or non-template illustration — use authored or strongly authored instead.
+  → Reserve "template-like" / "algorithmic" for stock UI, generic marketing grids, obvious stock photo tropes.
 - visual_novelty: by graphic/layout rarity, not by "weird subject"
 - confidence: image legibility and how sure you are of each layer; thumbnails default ~0.35–0.5
 
