@@ -91,60 +91,37 @@ export function AnalysisView({
         <ul className="mt-4 space-y-4">
           {saved_items.map((item, idx) => (
             <li
-              key={`${item.normalized_url}-${idx}`}
+              key={`${item.url ?? item.domain}-${idx}`}
               className="rounded-lg border border-border bg-card px-4 py-3"
             >
               <div className="text-sm font-medium leading-snug text-foreground">
-                {item.title?.trim() || item.normalized_url}
+                {item.title?.trim() || item.url || item.domain}
               </div>
               <a
-                href={item.normalized_url}
+                href={item.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-0.5 block truncate text-xs text-primary underline-offset-2 hover:underline"
               >
-                {item.normalized_url}
+                {item.url}
               </a>
               <p className="mt-2 text-xs text-muted-foreground">
                 {item.content_type} · {item.domain}
-                {item.author_publisher
-                  ? ` · ${item.author_publisher}`
-                  : null}
               </p>
-              {item.summary ? (
+              {item.short_summary ? (
                 <p className="mt-2 text-sm leading-relaxed text-foreground">
-                  {item.summary}
+                  {item.short_summary}
                 </p>
               ) : null}
-              {item.description ? (
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  {item.description}
+              {item.save_reason ? (
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground italic">
+                  {item.save_reason}
                 </p>
               ) : null}
-              {item.extracted_text_excerpt ? (
-                <p className="mt-2 line-clamp-5 text-xs leading-relaxed text-muted-foreground">
-                  {item.extracted_text_excerpt}
-                </p>
-              ) : null}
-              {(item.topics.length > 0 || item.tags.length > 0) && (
+              {item.style_descriptors?.length > 0 && (
                 <p className="mt-2 text-xs text-foreground">
-                  {item.topics.length > 0 && (
-                    <>
-                      <span className="font-medium text-muted-foreground">
-                        Topics:{" "}
-                      </span>
-                      {item.topics.join(", ")}
-                    </>
-                  )}
-                  {item.topics.length > 0 && item.tags.length > 0 && " · "}
-                  {item.tags.length > 0 && (
-                    <>
-                      <span className="font-medium text-muted-foreground">
-                        Tags:{" "}
-                      </span>
-                      {item.tags.join(", ")}
-                    </>
-                  )}
+                  <span className="font-medium text-muted-foreground">Style: </span>
+                  {item.style_descriptors.join(", ")}
                 </p>
               )}
               {item.vector_ready_text ? (

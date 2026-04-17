@@ -1,5 +1,5 @@
 import type { Link } from "@prisma/client";
-import { buildLinkAiProfile } from "@/lib/ai-taste/build-link-profile";
+import { buildLinkAiProfileAsync } from "@/lib/ai-taste/build-link-profile";
 import { extractMainTextFromUrl } from "@/lib/ai-taste/extract-main-text";
 import { analyzeImageForTaste, summarizeTranscript } from "@/lib/ai-taste/analyze-image";
 import { fetchYouTubeTranscript } from "@/lib/ai-taste/fetch-youtube-transcript";
@@ -149,25 +149,28 @@ export async function saveCapturedLinkForUser(
     }
   }
 
-  const aiProfile = buildLinkAiProfile({
-    normalizedUrl: preview.normalizedUrl,
-    url: preview.url,
-    canonicalUrl: null,
-    title,
-    description: preview.description,
-    domain: preview.domain,
-    provider: preview.provider,
-    previewType: preview.previewType,
-    imageUrl: preview.imageUrl,
-    faviconUrl,
-    siteName: preview.siteName,
-    author: oa,
-    publishedAt: null,
-    extractedText,
-    oEmbedAuthor: oa,
-    visionDescription,
-    userNote: note?.trim() || null,
-  });
+  const aiProfile = await buildLinkAiProfileAsync(
+    {
+      normalizedUrl: preview.normalizedUrl,
+      url: preview.url,
+      canonicalUrl: null,
+      title,
+      description: preview.description,
+      domain: preview.domain,
+      provider: preview.provider,
+      previewType: preview.previewType,
+      imageUrl: preview.imageUrl,
+      faviconUrl,
+      siteName: preview.siteName,
+      author: oa,
+      publishedAt: null,
+      extractedText,
+      oEmbedAuthor: oa,
+      visionDescription,
+      userNote: note?.trim() || null,
+    },
+    openaiApiKey
+  );
 
   const tagsJson = JSON.stringify(
     Array.isArray(tags) ? tags.slice(0, 30) : []

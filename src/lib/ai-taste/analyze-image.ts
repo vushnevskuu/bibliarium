@@ -1,7 +1,6 @@
 /**
- * Vision analysis of images via OpenAI GPT-4o-mini.
- * Returns a rich description for the AI taste profile.
- * Gracefully returns null if OPENAI_API_KEY is not set or the call fails.
+ * Vision analysis and transcript summarization via OpenAI.
+ * These run at link-save time and feed into the taste pipeline.
  */
 
 import OpenAI from "openai";
@@ -12,15 +11,14 @@ function getClient(userApiKey?: string | null): OpenAI | null {
   return new OpenAI({ apiKey: key });
 }
 
-const VISION_PROMPT = `You are analyzing an image saved to a personal taste board.
-Describe in 3-5 sentences:
-1. What is depicted (objects, people, scenes, places)
-2. Visual aesthetic and style (minimalist, maximalist, brutalist, organic, editorial, etc.)
-3. Color palette and mood (warm/cool, dark/light, calm/energetic, saturated/muted)
-4. If design/UI: layout philosophy, typography feel, interaction style
-5. Cultural or contextual references if recognizable
+const VISION_PROMPT = `Describe this image in 2-4 sentences focused on:
+1. What is depicted (objects, scenes, environments)
+2. Visual aesthetic and style (e.g. minimalist, maximalist, brutalist, organic, editorial)
+3. Color palette and lighting mood
+4. If it is design/UI: layout philosophy, typography, interaction patterns
 
-Be specific and vocabulary-rich. Focus on aesthetic signals useful for understanding taste.`;
+Be specific and vocabulary-rich. Focus on aesthetic signals useful for understanding the saver's taste.
+Do not mention the platform it came from.`;
 
 export async function analyzeImageForTaste(
   imageUrl: string,
@@ -28,34 +26,29 @@ export async function analyzeImageForTaste(
 ): Promise<string | null> {
   const client = getClient(userApiKey);
   if (!client) return null;
-
   try {
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      max_tokens: 300,
+      max_tokens: 250,
       messages: [
         {
           role: "user",
           content: [
             { type: "text", text: VISION_PROMPT },
-            {
-              type: "image_url",
-              image_url: { url: imageUrl, detail: "low" }, // "low" = cheaper, still great for aesthetics
-            },
+            { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
           ],
         },
       ],
     });
-
     return response.choices[0]?.message?.content?.trim() ?? null;
   } catch {
     return null;
   }
 }
 
-const TRANSCRIPT_SUMMARY_PROMPT = `Summarize this video transcript in 3-4 sentences for a taste profile.
-Focus on: main topic, tone/style of the creator, key ideas, target audience vibe.
-Be concise and vocabulary-rich.
+const TRANSCRIPT_PROMPT = `Summarize this video transcript in 2-3 sentences for a taste profile.
+Focus on: main topic, tone and style of the creator, key ideas, and what kind of audience sensibility it addresses.
+Be specific, avoid generic phrases.
 
 Transcript:`;
 
@@ -65,61 +58,18 @@ export async function summarizeTranscript(
 ): Promise<string | null> {
   const client = getClient(userApiKey);
   if (!client) return null;
-
   try {
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      max_tokens: 200,
+      max_tokens: 180,
       messages: [
-        {
-          role: "user",
-          content: `${TRANSCRIPT_SUMMARY_PROMPT}\n\n${transcript.slice(0, 6000)}`,
-        },
+        { role: "user", content: `${TRANSCRIPT_PROMPT}\n\n${transcript.slice(0, 6000)}` },
       ],
     });
-
     return response.choices[0]?.message?.content?.trim() ?? null;
   } catch {
     return null;
   }
 }
 
-const MASTER_PROFILE_PROMPT = `Based on these saved items from someone's taste board, write a 2-3 sentence taste profile.
-Be insightful, specific, and use rich vocabulary. Focus on aesthetic patterns, creative interests, and sensibilities.
-Avoid generic phrases like "diverse interests" — be precise about what makes this taste distinctive.
-
-Items:\n`;
-
-export async function generateTasteSummary(
-  items: { title: string | null; description: string | null; visionDescription: string | null; note: string | null }[],
-  userApiKey?: string | null
-): Promise<string | null> {
-  const client = getClient(userApiKey);
-  if (!client) return null;
-
-  const itemLines = items
-    .slice(0, 30)
-    .map((item, i) => {
-      const parts = [
-        item.title ? `"${item.title}"` : null,
-        item.visionDescription,
-        item.note ? `Note: "${item.note}"` : null,
-      ].filter(Boolean);
-      return `${i + 1}. ${parts.join(" — ")}`;
-    })
-    .join("\n");
-
-  try {
-    const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 200,
-      messages: [
-        { role: "user", content: `${MASTER_PROFILE_PROMPT}${itemLines}` },
-      ],
-    });
-
-    return response.choices[0]?.message?.content?.trim() ?? null;
-  } catch {
-    return null;
-  }
-}
+// generateTasteSummary removed — LLM aggregation now lives in build-master-profile.ts
