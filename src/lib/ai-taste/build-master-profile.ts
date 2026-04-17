@@ -31,6 +31,8 @@ Prefer sparse, testable labels over narrative. If two labels would cluster toget
 
 const VISUAL_PROFILE_PROMPT = `Build a visual taste profile from these visual-routed items. Goal: discriminate this board from generic "design inspiration" noise — not to impress a reader.
 
+Each item line includes visual_language_strength (0–1): prioritize HIGH scores when inferring board-level recurring graphic patterns; do not let low-strength, text-forward editorial rows steer the visual profile.
+
 STRICT RULES:
 1. Prefix summary_short with "Current saves suggest..." — no "this person is/has/shows"
 2. recurring_visual_signals: ONLY if evidence_item_indices has 2+ DISTINCT indices. Never 1.
@@ -77,11 +79,12 @@ STRICT RULES:
 1. "Current saves suggest..." — never "this person is/has/tends to"
 2. core_attraction: only if 2+ items share a checkable theme. Else leave empty.
 3. recurring_patterns: 2+ DISTINCT indices per pattern; omit single-item "patterns"
-4. Do not center recurring_patterns on a lone proper-named creator, film, or artwork unless 3+ DISTINCT evidence_item_indices clearly share that exact cluster; prefer era/movement/venue/channel language when evidence is thinner
-5. likely_dislikes: only with explicit counter-evidence across items; else []
-6. No deficits, limits, or psycho-moral reads
-7. confidence ≈ average of pattern confidences when patterns exist; else low
-8. Thin evidence → fewer patterns, lower confidence; no filler tropes (sustainability, "deep stories", innovation clichés)
+4. Long-form text or named cultural references alone are weaker evidence than repeated visual-language saves — do not let one verbose article outweigh several authored graphic items unless indices clearly support that pattern.
+5. Do not center recurring_patterns on a lone proper-named creator, film, or artwork unless 3+ DISTINCT evidence_item_indices clearly share that exact cluster; prefer era/movement/venue/channel language when evidence is thinner
+6. likely_dislikes: only with explicit counter-evidence across items; else []
+7. No deficits, limits, or psycho-moral reads
+8. confidence ≈ average of pattern confidences when patterns exist; else low
+9. Thin evidence → fewer patterns, lower confidence; no filler tropes (sustainability, "deep stories", innovation clichés)
 
 OUTPUT valid JSON:
 {
@@ -279,6 +282,9 @@ function visualLanguageSignalsForAggregate(item: SavedItemV4): string[] {
   if (/subcultural|indie|internet-native|underground|counterculture|club\s+culture/i.test(blob)) {
     out.push("subcultural-indie-surface");
   }
+  const path = savedItemUrlPath(item.url);
+  if (/\/(work|works|portfolio|projects|selected-work)\b/.test(path)) out.push("portfolio-or-design-index");
+  if (/(cargo\.site|readymag\.|behance\.net|dribbble\.com)/i.test(path)) out.push("design-portfolio-surface");
   return Array.from(new Set(out));
 }
 
@@ -373,13 +379,43 @@ function sanitizeVisualProfileCopy(vp: VisualProfile): VisualProfile {
   };
 }
 
+function savedItemUrlPath(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname}${u.pathname}`.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+/** Same idea as per-link computeVisualLanguageStrength — up-weights portfolio / authored graphic rows in aggregation. */
+function visualLanguageStrengthFromSavedItem(p: SavedItemV4): number {
+  const vl = p.visual_layer;
+  if (!vl.present) return 0.06;
+  let x =
+    0.34 * (vl.visual_authorship ?? 0) +
+    0.18 * (vl.visual_oddity ?? 0);
+  const ex = (vl.graphic_execution_read ?? "").trim().length;
+  x += 0.17 * Math.min(1, ex / 90);
+  x += 0.11 * Math.min(1, vl.stylistic_signals.length / 5);
+  const it = vl.image_type.toLowerCase().replace(/-/g, "_");
+  if (/(illustration|graphic_design|collage|poster|pin_board|mixed|abstract|text_image)/.test(it)) x += 0.12;
+  const path = savedItemUrlPath(p.url);
+  if (/\/(work|works|portfolio|projects|selected-work|archive)\b/.test(path)) x += 0.12;
+  if (/(cargo\.site|readymag\.|behance\.net|dribbble\.com|are\.na\/)/i.test(path)) x += 0.09;
+  const title = (p.title ?? "").toLowerCase();
+  if (/\b(graphic|design|illustration|portfolio|studio)\b/.test(title) && title.length < 90) x += 0.05;
+  return Math.min(1, Math.max(0.06, x));
+}
+
 function serializeItemsForVisualAggregation(items: SavedItemV4[], indices: number[]): string {
   return indices.slice(0, 25).map(i => {
     const item = items[i];
     if (!item) return "";
     const vl = item.visual_layer;
+    const vls = visualLanguageStrengthFromSavedItem(item);
     const parts = [
-      `[${i}] domain=${item.domain} kind=${item.item_kind} intent=${item.save_intent.primary} aesthetic_weight=${item.taste_interpretation.weight_in_aesthetic_aggregation.toFixed(2)}`,
+      `[${i}] domain=${item.domain} kind=${item.item_kind} intent=${item.save_intent.primary} aesthetic_weight=${item.taste_interpretation.weight_in_aesthetic_aggregation.toFixed(2)} visual_language_strength=${vls.toFixed(2)}`,
       `  NOTE: infer recurring VISUAL LANGUAGE only — not product topics, materials ethics, or utility purpose.`,
       `  NOTE: aggregate SHARED graphic mechanics (linework, grain, crop, type, attitude, odd-but-controlled) — not a catalogue of proper names; one-off biographical references stay weak/single-item only.`,
     ];
@@ -515,7 +551,9 @@ function countWeightedSignals(
     const item = items[i];
     if (!item) continue;
     const rawW = item.taste_interpretation.weight_in_aesthetic_aggregation ?? 0;
-    const weight = rawW > 0 ? rawW : (item.profile_routing.affects_visual_profile ? 0.22 : 0.06);
+    const base = rawW > 0 ? rawW : (item.profile_routing.affects_visual_profile ? 0.22 : 0.06);
+    const vls = visualLanguageStrengthFromSavedItem(item);
+    const weight = base * (0.68 + 0.52 * vls);
     for (const s of getSignals(item)) {
       if (!s || s.length < 3) continue;
       const e = map.get(s) ?? { score: 0, count: 0, idx: [] };

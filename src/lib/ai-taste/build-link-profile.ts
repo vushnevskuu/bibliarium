@@ -68,6 +68,8 @@ SUBJECT vs VISUAL (mandatory):
   If VISUAL ANALYSIS lists execution/linework/palette/graphic attitude, prefer those as save drivers
   over literal subject nouns.
 - Do not treat ethics/subject categories (recycled materials, sustainability, climate, CSR) as aesthetic drivers unless the visible graphic is literally about that and execution tokens support it.
+- Text-heavy editorial / cultural articles (long prose, named figures) must NOT outrank visually authored
+  portfolio or design-forward pages: when VISUAL ANALYSIS shows strong authored / non-template / poster-like / illustration-forward craft, set high visual_taste_relevance and weight_in_aesthetic_aggregation even if title/description are short.
 
 ROUTING:
 - Tools, parsers, API docs, AI workspaces, hosting dashboards, read-later articles without visual intent:
@@ -236,6 +238,102 @@ function applyUtilityVisualGuards(input: BuildLinkProfileInput, llm: LlmItemResu
   return out;
 }
 
+/** 0–1: how much this save should drive visual aggregation vs text-only cultural reads */
+function computeVisualLanguageStrength(
+  input: BuildLinkProfileInput,
+  vl: VisualLayer,
+): number {
+  if (!input.imageUrl) return vl.present ? 0.14 : 0.06;
+  if (!vl.present) return 0.1;
+  let x =
+    0.34 * (vl.visual_authorship ?? 0) +
+    0.18 * (vl.visual_oddity ?? 0);
+  const ex = (vl.graphic_execution_read ?? "").trim().length;
+  x += 0.17 * Math.min(1, ex / 90);
+  x += 0.11 * Math.min(1, vl.stylistic_signals.length / 5);
+  const it = (vl.image_type ?? "").toLowerCase().replace(/-/g, "_");
+  if (/(illustration|graphic_design|collage|poster|pin_board|mixed|abstract|text_image)/.test(it)) x += 0.12;
+  const path = normalizeUrlPath(input.url);
+  if (/\/(work|works|portfolio|projects|selected-work|archive)\b/.test(path)) x += 0.12;
+  if (/(cargo\.site|readymag\.|behance\.net|dribbble\.com|are\.na\/)/i.test(path)) x += 0.09;
+  const title = (input.title ?? "").toLowerCase();
+  if (/\b(graphic|design|illustration|portfolio|studio)\b/.test(title) && title.length < 90) x += 0.05;
+  return Math.min(1, Math.max(0.06, x));
+}
+
+function isTextHeavyCulturalPage(input: BuildLinkProfileInput, llm: LlmItemResult, vs: number): boolean {
+  if (vs >= 0.48) return false;
+  const textLen =
+    (input.description?.length ?? 0) +
+    (input.extractedText?.length ?? 0) +
+    (llm.semantic_layer.short_summary?.length ?? 0);
+  const primary = llm.save_intent.primary;
+  const culturalish =
+    primary === "cultural_signal" ||
+    primary === "read_later" ||
+    primary === "research" ||
+    (llm.profile_routing.affects_cultural_profile && (llm.taste_interpretation.weight_in_cultural_aggregation ?? 0) >= 0.48);
+  return culturalish && textLen >= 300;
+}
+
+/**
+ * Down-rank text-forward cultural rows vs visually authored portfolio/design saves.
+ * Runs after vision so scores use graphic_execution_read, authorship, image_type, URL.
+ */
+function applyVisualCulturalRebalance(
+  input: BuildLinkProfileInput,
+  llm: LlmItemResult,
+  vl: VisualLayer,
+): LlmItemResult {
+  const out = cloneLlm(llm);
+  const vs = computeVisualLanguageStrength(input, vl);
+  const it = (vl.image_type ?? "").toLowerCase().replace(/-/g, "_");
+  const path = normalizeUrlPath(input.url);
+  const portfolioGraphic =
+    vs >= 0.52 &&
+    (
+      /(illustration|graphic_design|collage|poster|pin_board|mixed|abstract)/.test(it) ||
+      /\/(work|works|portfolio|projects|selected-work)\b/.test(path) ||
+      (vl.visual_authorship ?? 0) >= 0.56 ||
+      (vl.graphic_execution_read ?? "").trim().length >= 42
+    );
+
+  if (portfolioGraphic) {
+    out.taste_interpretation.weight_in_aesthetic_aggregation = parseFloat(
+      Math.min(
+        0.94,
+        Math.max(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.58 + vs * 0.24),
+      ).toFixed(2),
+    );
+    out.relevance.visual_taste_relevance = parseFloat(
+      Math.min(0.96, Math.max(out.relevance.visual_taste_relevance, 0.58 + vs * 0.22)).toFixed(2),
+    );
+    out.profile_routing.affects_visual_profile = true;
+    out.taste_interpretation.should_affect_aesthetic_profile = true;
+    out.taste_interpretation.weight_in_cultural_aggregation = parseFloat(
+      Math.min(out.taste_interpretation.weight_in_cultural_aggregation, 0.54).toFixed(2),
+    );
+  } else if (isTextHeavyCulturalPage(input, out, vs)) {
+    out.taste_interpretation.weight_in_cultural_aggregation = parseFloat(
+      Math.min(out.taste_interpretation.weight_in_cultural_aggregation, 0.5).toFixed(2),
+    );
+    out.taste_interpretation.weight_in_aesthetic_aggregation = parseFloat(
+      Math.min(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.38).toFixed(2),
+    );
+    out.relevance.visual_taste_relevance = parseFloat(
+      Math.min(out.relevance.visual_taste_relevance, Math.max(0.3, vs * 0.9)).toFixed(2),
+    );
+  }
+
+  if (!portfolioGraphic && out.relevance.cultural_taste_relevance >= 0.68 && vs < 0.4) {
+    out.taste_interpretation.weight_in_aesthetic_aggregation = parseFloat(
+      Math.min(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.36).toFixed(2),
+    );
+  }
+
+  return out;
+}
+
 function itemKindFromLlm(llm: LlmItemResult): ItemKind {
   const p = llm.save_intent.primary;
   if (p === "tool_for_future_use" || p === "workflow_resource") return "tool";
@@ -259,7 +357,10 @@ function authorshipNumeric(auth?: string): number {
 }
 
 /** Vision often says "neutral" for non-stock illustration; boost from tokens + execution so authored boards don't read as "low authorship". */
-function authorshipScoreFromVision(vp: NonNullable<BuildLinkProfileInput["visualProfile"]>): number {
+function authorshipScoreFromVision(
+  vp: NonNullable<BuildLinkProfileInput["visualProfile"]>,
+  pageUrl?: string | null,
+): number {
   let base = authorshipNumeric(vp.authorship_signal);
   const a = (vp.authorship_signal ?? "").toLowerCase();
   const isTemplateOrStock =
@@ -272,15 +373,21 @@ function authorshipScoreFromVision(vp: NonNullable<BuildLinkProfileInput["visual
   const prose = `${vp.execution_read ?? ""} ${vp.non_subject_attraction ?? ""} ${vp.visual_attraction ?? ""}`.toLowerCase();
   const blob = `${sig} ${prose} ${depicted}`;
   const authoredCue =
-    /authored|hand-?made|anti-?template|non-?template|editorial|zine|riso|risograph|letterpress|illustration|linework|contour|brush\s*ink|marker|collage|graphic\s*attitude|poster-?like|vernacular|internet-native|subcultural|indie|diy|lo-fi|raw-graphic|halftone|grain|xerox|photocopy|bespoke|custom\s+type|title\s+treatment|title\s+card|film\s+still|cine(still|matograph)|director|scene\s+composition|shader|generative|webgl|glsl|ray-?marched|3d\s+(scene|render)(?!\s+stock)/i;
+    /authored|hand-?made|anti-?template|non-?template|editorial|zine|riso|risograph|letterpress|illustration|linework|contour|brush\s*ink|marker|collage|graphic\s*attitude|poster-?like|vernacular|internet-native|subcultural|indie|diy|lo-fi|raw-graphic|halftone|grain|xerox|photocopy|bespoke|custom\s+type|title\s+treatment|title\s+card|film\s+still|cine(still|matograph)|director|scene\s+composition|shader|generative|webgl|glsl|ray-?marched|3d\s+(scene|render)(?!\s+stock)|portfolio|thumb\s*grid|project\s+grid|deck|selected\s+work/i;
   if (authoredCue.test(blob)) base = Math.max(base, 0.58);
   if (/strongly\s*authored/i.test(a)) base = Math.max(base, 0.86);
   if (/\bauthored\b/i.test(a) && !isTemplateOrStock) base = Math.max(base, 0.7);
 
-  const it = (vp.image_type ?? "").toLowerCase();
-  if (/(illustration|graphic-design|collage|poster|pin-board|mixed|3d-render|film-still|photography)/.test(it)) base = Math.max(base, 0.54);
+  const it = (vp.image_type ?? "").toLowerCase().replace(/-/g, "_");
+  if (/(illustration|graphic_design|collage|poster|pin_board|mixed|3d_render|film_still|photography)/.test(it)) base = Math.max(base, 0.54);
   const execLen = (vp.execution_read ?? "").trim().length;
   if (execLen >= 90 && !/\b(stock|template\s+photo|shutterstock)\b/i.test(prose)) base = Math.max(base, 0.55);
+  if (execLen >= 38 && execLen < 90 && /portfolio|grid|thumbnail|poster|type|layout|spread|cover/i.test(prose)) {
+    base = Math.max(base, 0.52);
+  }
+  const path = pageUrl ? normalizeUrlPath(pageUrl) : "";
+  if (path && /\/(work|works|portfolio|projects|selected-work|archive)\b/.test(path)) base = Math.max(base, 0.57);
+  if (path && /(cargo\.site|readymag\.|behance\.net|dribbble\.com)/i.test(path)) base = Math.max(base, 0.55);
 
   return Math.min(1, Math.max(0.14, base));
 }
@@ -334,6 +441,15 @@ async function extractWithLlm(
 
 function normalizeDomain(d: string): string {
   return d.replace(/^www\./i, "").toLowerCase();
+}
+
+function normalizeUrlPath(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname}${u.pathname}`.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
 }
 
 const TOOL_DOMAINS = new Set([
@@ -457,7 +573,8 @@ function heuristicResult(input: BuildLinkProfileInput): LlmItemResult {
 function buildVisualLayer(
   hasImage: boolean,
   vp: BuildLinkProfileInput["visualProfile"],
-  visionString: string | null | undefined
+  visionString: string | null | undefined,
+  pageUrl?: string | null,
 ): VisualLayer {
   if (!hasImage) {
     return {
@@ -475,10 +592,14 @@ function buildVisualLayer(
     const novelty = typeof vp.visual_novelty === "number" ? Math.min(1, Math.max(0, vp.visual_novelty)) : 0.4;
     const sigs = stripTopicStylisticTokens(filterTags([...(vp.stylistic_signals ?? [])]));
     if (vp.controlled_weirdness?.trim()) sigs.push(vp.controlled_weirdness.trim().slice(0, 48));
-    const authScore = authorshipScoreFromVision(vp);
+    const authScore = authorshipScoreFromVision(vp, pageUrl);
+    const pathBoost =
+      pageUrl && /\/(work|works|portfolio|projects|selected-work)\b/.test(normalizeUrlPath(pageUrl)) ? 0.08
+      : pageUrl && /(cargo\.site|readymag\.|behance\.net|dribbble\.com)/i.test(normalizeUrlPath(pageUrl)) ? 0.06
+      : 0;
     return {
       present: true,
-      importance: Math.min(1, Math.max(0.2, (vp.confidence ?? 0.55) * 0.65 + novelty * 0.35)),
+      importance: Math.min(1, Math.max(0.2, (vp.confidence ?? 0.55) * 0.65 + novelty * 0.35 + pathBoost)),
       depicted_subject: vp.depicted ? [vp.depicted] : [],
       image_type: (vp.image_type as ImageType) ?? "unknown",
       composition: vp.composition ? [vp.composition] : [],
@@ -596,7 +717,13 @@ export async function buildLinkAiProfileAsync(
   if (!llmResult) llmResult = heuristicResult(input);
   llmResult = applyUtilityVisualGuards(input, llmResult);
 
-  const visualLayer = buildVisualLayer(Boolean(input.imageUrl), input.visualProfile, input.visionDescription);
+  const visualLayer = buildVisualLayer(
+    Boolean(input.imageUrl),
+    input.visualProfile,
+    input.visionDescription,
+    input.url,
+  );
+  llmResult = applyVisualCulturalRebalance(input, llmResult, visualLayer);
   const vectorText = buildVectorText(llmResult, visualLayer, input.title ?? null);
 
   return {
@@ -620,8 +747,12 @@ export async function buildLinkAiProfileAsync(
 
 /** Sync fallback for legacy callers */
 export function buildLinkAiProfile(input: BuildLinkProfileInput): SavedItemV4 {
-  const llm = heuristicResult(input);
-  const vl = buildVisualLayer(Boolean(input.imageUrl), input.visualProfile, input.visionDescription);
+  const vl = buildVisualLayer(Boolean(input.imageUrl), input.visualProfile, input.visionDescription, input.url);
+  const llm = applyVisualCulturalRebalance(
+    input,
+    applyUtilityVisualGuards(input, heuristicResult(input)),
+    vl,
+  );
   return {
     item_index: 0,
     url: input.url,
