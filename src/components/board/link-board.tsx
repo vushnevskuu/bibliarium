@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
+import { Loader2 } from "lucide-react";
 import type { LinkSerialized } from "@/types/link";
 import { cn } from "@/lib/utils";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -132,6 +133,7 @@ export function LinkBoard({
   const [mixBusy, setMixBusy] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [copyLabel, setCopyLabel] = React.useState<"share" | "ai" | null>(null);
+  const [aiLoading, setAiLoading] = React.useState(false);
   const [hasOpenaiKey, setHasOpenaiKey] = React.useState(initialHasOpenaiKey);
   const [openaiInput, setOpenaiInput] = React.useState("");
   const [openaiSaving, setOpenaiSaving] = React.useState(false);
@@ -151,15 +153,18 @@ export function LinkBoard({
   };
 
   const copyForAI = async () => {
-    if (!currentSlug) return;
+    if (!currentSlug || aiLoading) return;
+    setAiLoading(true);
     try {
       const res = await fetch(`/api/taste/export?slug=${currentSlug}&format=md`);
       const text = await res.text();
       await navigator.clipboard.writeText(text);
       flashCopy("ai");
+      setTimeout(() => setMenuOpen(false), 1600);
     } catch { /* ignore */ }
-    // close after showing feedback
-    setTimeout(() => setMenuOpen(false), 1600);
+    finally {
+      setAiLoading(false);
+    }
   };
 
   const refreshLinks = React.useCallback(async () => {
@@ -413,9 +418,15 @@ export function LinkBoard({
                                 <button
                                   type="button"
                                   onClick={() => void copyForAI()}
-                                  className="w-full rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60"
+                                  disabled={aiLoading}
+                                  className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted/60 disabled:opacity-60"
                                 >
-                                  {copyLabel === "ai" ? "Copied!" : "Copy for AI"}
+                                  <span>
+                                    {copyLabel === "ai" ? "Copied!" : "Copy for AI"}
+                                  </span>
+                                  {aiLoading && (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                                  )}
                                 </button>
                               </div>
                             )}
