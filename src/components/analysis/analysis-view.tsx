@@ -124,6 +124,18 @@ export function AnalysisView({
                   {item.visual_layer.stylistic_signals.join(", ")}
                 </p>
               )}
+              {item.visual_layer?.graphic_execution_read ? (
+                <p className="mt-1 text-xs text-foreground">
+                  <span className="font-medium text-muted-foreground">Execution: </span>
+                  {item.visual_layer.graphic_execution_read}
+                </p>
+              ) : null}
+              {item.visual_layer?.visual_attraction_hypothesis ? (
+                <p className="mt-1 text-xs text-foreground">
+                  <span className="font-medium text-muted-foreground">Visual read: </span>
+                  {item.visual_layer.visual_attraction_hypothesis}
+                </p>
+              ) : null}
               {item.vector_ready_text ? (
                 <details className="mt-3 rounded-md border border-border bg-muted/20 p-2">
                   <summary className="cursor-pointer select-none text-xs font-medium text-foreground">

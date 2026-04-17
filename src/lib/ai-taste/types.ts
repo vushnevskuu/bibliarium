@@ -88,6 +88,10 @@ export type VisualLayer = {
   cultural_signal: string[];             // cultural anchors if visible
   emotional_tone: string[];              // e.g. ["dry", "curious", "slightly strange"]
   confidence: number;
+  /** Linework, contour, brush/vector read, grain/halftone — not subject matter */
+  graphic_execution_read?: string;
+  /** Why the frame may be attractive visually (palette, attitude, texture) — not "because funny" */
+  visual_attraction_hypothesis?: string;
 };
 
 // ─── Semantic layer ───────────────────────────────────────────────────────────
@@ -164,6 +168,8 @@ export type VisualPreferenceAxes = {
 export type VisualProfile = {
   summary_short: string;
   recurring_visual_signals: EvidencedSignal[];
+  /** Single-item or thin-evidence visual reads — must not drive main profile copy */
+  weak_visual_hypotheses?: EvidencedSignal[];
   visual_preference_axes: VisualPreferenceAxes;
   repeated_moods: string[];
   likely_visual_likes_more_of: string[];

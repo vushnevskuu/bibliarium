@@ -180,6 +180,18 @@ export function PostDetailPanel({
                 {link.aiProfile.visual_layer.stylistic_signals.join(", ")}
               </p>
             ) : null}
+            {link.aiProfile.visual_layer?.graphic_execution_read ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Execution: </span>
+                {link.aiProfile.visual_layer.graphic_execution_read}
+              </p>
+            ) : null}
+            {link.aiProfile.visual_layer?.visual_attraction_hypothesis ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Visual read: </span>
+                {link.aiProfile.visual_layer.visual_attraction_hypothesis}
+              </p>
+            ) : null}
             {link.aiProfile.visual_layer?.emotional_tone?.length ? (
               <p className="mt-1 text-xs text-muted-foreground">
                 <span className="font-medium text-foreground">Mood: </span>

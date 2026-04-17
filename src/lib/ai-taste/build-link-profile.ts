@@ -56,17 +56,32 @@ function filterTags(arr: string[]): string[] {
 // LLM semantic + taste prompt
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ITEM_PROMPT = `You are analyzing a saved link for a taste dossier.
-Produce two layers: semantic_layer (what it is) and taste_interpretation (why it was saved and how it routes).
+const ITEM_SYSTEM = `Optimize for correctness and taste discrimination, not for sounding insightful.
+Prefer short, falsifiable statements. When evidence is weak, output less and lower scores — do not pad with generic insight.`;
+
+const ITEM_PROMPT = `You are analyzing a saved link for a taste dossier (machine-readable, not prose for humans).
+Produce two layers: semantic_layer (what it is) and taste_interpretation (routing + bounded why).
+
+SUBJECT vs VISUAL (mandatory):
+- semantic_layer / topic_tags may mention subject matter factually.
+- save_reason and interpretation must NOT collapse "odd subject" into "saved for humor/meme".
+  If VISUAL ANALYSIS lists execution/linework/palette/graphic attitude, prefer those as save drivers
+  over literal subject nouns.
+
+ROUTING:
+- Tools, parsers, API docs, AI workspaces, hosting dashboards, read-later articles without visual intent:
+  affects_visual_profile=false, weight_in_aesthetic_aggregation <= 0.15, aesthetic_contamination_risk >= 0.7
+- Only set affects_visual_profile=true when there is real visual-intent evidence (image-forward save,
+  clear illustration/graphic/poster language in the preview, or VISUAL ANALYSIS shows non-template craft).
 
 RULES:
 - No platform names as taste signals
 - No render labels as aesthetics
 - should_affect_aesthetic_profile=false for tools, tutorials, articles with no visual evidence
 - aesthetic_contamination_risk: 0.0=pure visual, 1.0=pure utility tool
-- save_reason must be 1 sentence of causal inference
-- observable_evidence: directly observable facts, not speculation
-- interpretation: higher-level taste inferences
+- save_reason: ONE sentence; strongest supported driver only. If drivers are unclear, state what is observable (preview type, execution tokens) without psychologizing.
+- observable_evidence: 2–3 directly checkable facts from URL/title/description/VISUAL ANALYSIS — no chain speculation
+- interpretation: at most 2 strings; each must be a specific graphic or routing claim you could defend from observable_evidence. No "deeply suggests", "reveals", "speaks to who they are".
 
 CRITICAL — DO NOT:
 - Make evaluative judgments about the person (negative or positive)
@@ -115,7 +130,7 @@ OUTPUT valid JSON only:
     "aesthetic_contamination_risk": 0.0,
     "save_reason": "1 sentence causal inference",
     "observable_evidence": ["2-3 directly observable facts"],
-    "interpretation": ["2-3 higher-level taste inferences"],
+    "interpretation": ["0-2 specific, evidence-tethered inferences only"],
     "confidence": 0.0
   }
 }`;
@@ -142,17 +157,112 @@ function buildContext(input: BuildLinkProfileInput): string {
     const v = input.visualProfile;
     parts.push([
       `VISUAL ANALYSIS:`,
-      `  Type: ${v.image_type}, Depicted: ${v.depicted ?? "unknown"}`,
+      `  Type: ${v.image_type}, Depicted (subject): ${v.depicted ?? "unknown"}`,
+      `  Execution (linework/render/texture): ${v.execution_read ?? "n/a"}`,
+      `  Non-subject attraction: ${v.non_subject_attraction ?? "n/a"}`,
       `  Composition: ${v.composition}`,
       `  Color: ${v.color_profile?.description}`,
       `  Style signals: ${v.stylistic_signals?.join(", ")}`,
       `  Authorship: ${v.authorship_signal}`,
-      `  Attraction: ${v.visual_attraction}`,
+      `  Visual attraction (graphic read): ${v.visual_attraction}`,
     ].filter(Boolean).join("\n"));
   } else if (input.visionDescription) {
     parts.push(`Visual: ${input.visionDescription}`);
   }
   return parts.join("\n");
+}
+
+function cloneLlm(llm: LlmItemResult): LlmItemResult {
+  return {
+    ...llm,
+    save_intent: { ...llm.save_intent, secondary: [...llm.save_intent.secondary] },
+    relevance: { ...llm.relevance },
+    profile_routing: { ...llm.profile_routing },
+    semantic_layer: { ...llm.semantic_layer },
+    taste_interpretation: {
+      ...llm.taste_interpretation,
+      observable_evidence: [...llm.taste_interpretation.observable_evidence],
+      interpretation: [...llm.taste_interpretation.interpretation],
+    },
+  };
+}
+
+/** Strong utility hosts / UI surfaces must not write the aesthetic graph unless image-only save */
+function applyUtilityVisualGuards(input: BuildLinkProfileInput, llm: LlmItemResult): LlmItemResult {
+  const out = cloneLlm(llm);
+  const dom = normalizeDomain(input.domain);
+  const imageLikeProvider = ["image", "pinterest-brand"].includes(input.provider);
+  const toolHost = TOOL_DOMAINS.has(dom);
+  const imgKind = (input.visualProfile?.image_type ?? "").toLowerCase();
+  const uiSkew = /ui|dashboard|console|devtools|\bide\b|oauth|settings panel/i.test(imgKind)
+    || /ui-?screenshot|ui_screenshot/.test(imgKind);
+
+  if (toolHost && !imageLikeProvider) {
+    out.profile_routing.affects_visual_profile = false;
+    out.taste_interpretation.should_affect_aesthetic_profile = false;
+    out.taste_interpretation.weight_in_aesthetic_aggregation = parseFloat(
+      Math.min(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.1).toFixed(2),
+    );
+    out.taste_interpretation.aesthetic_contamination_risk = parseFloat(
+      Math.max(out.taste_interpretation.aesthetic_contamination_risk, 0.85).toFixed(2),
+    );
+    out.relevance.visual_taste_relevance = parseFloat(Math.min(out.relevance.visual_taste_relevance, 0.2).toFixed(2));
+    return out;
+  }
+
+  const utilPrimary =
+    out.save_intent.primary === "tool_for_future_use" ||
+    out.save_intent.primary === "workflow_resource";
+  if (
+    utilPrimary &&
+    out.relevance.utility_relevance >= 0.6 &&
+    out.relevance.visual_taste_relevance < 0.55
+  ) {
+    out.profile_routing.affects_visual_profile = false;
+    out.taste_interpretation.weight_in_aesthetic_aggregation = parseFloat(
+      Math.min(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.14).toFixed(2),
+    );
+  }
+
+  if (uiSkew && out.relevance.utility_relevance >= 0.42 && out.taste_interpretation.aesthetic_contamination_risk >= 0.35) {
+    out.profile_routing.affects_visual_profile = false;
+    out.taste_interpretation.should_affect_aesthetic_profile = false;
+    out.taste_interpretation.weight_in_aesthetic_aggregation = parseFloat(
+      Math.min(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.12).toFixed(2),
+    );
+  }
+
+  return out;
+}
+
+function itemKindFromLlm(llm: LlmItemResult): ItemKind {
+  const p = llm.save_intent.primary;
+  if (p === "tool_for_future_use" || p === "workflow_resource") return "tool";
+  if (p === "cultural_signal") return "cultural_reference";
+  if (p === "visual_inspiration" || p === "mood_capture") return "visual_reference";
+  if (p === "read_later" || p === "practical_reference" || p === "research") return "article";
+  if (llm.semantic_layer.use_case === "tool") return "tool";
+  if (llm.semantic_layer.use_case === "learning") return "tutorial";
+  return "mixed";
+}
+
+function authorshipNumeric(auth?: string): number {
+  const a = (auth ?? "neutral").toLowerCase();
+  if (a.includes("strongly")) return 0.88;
+  if (a.includes("authored") && !a.includes("template")) return 0.72;
+  if (a.includes("neutral")) return 0.48;
+  if (a.includes("template")) return 0.22;
+  if (a.includes("algorithmic")) return 0.12;
+  return 0.45;
+}
+
+function polishFromAuthorship(auth?: string, novelty = 0.5): PolishLevel {
+  const a = (auth ?? "neutral").toLowerCase();
+  if (a.includes("algorithmic")) return "highly-polished";
+  if (a.includes("template")) return "refined";
+  if (a.includes("strongly authored")) return novelty > 0.55 ? "raw" : "lo-fi";
+  if (a.includes("authored")) return novelty > 0.62 ? "raw" : "lo-fi";
+  return "mixed";
 }
 
 async function extractWithLlm(
@@ -163,10 +273,10 @@ async function extractWithLlm(
     const res = await client.chat.completions.create({
       model: "gpt-4o-mini",
       max_tokens: 900,
-      temperature: 0.1,
+      temperature: 0.06,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: ITEM_PROMPT },
+        { role: "system", content: `${ITEM_SYSTEM}\n\n${ITEM_PROMPT}` },
         { role: "user", content: buildContext(input) },
       ],
     });
@@ -180,11 +290,24 @@ async function extractWithLlm(
 // Heuristic classification
 // ─────────────────────────────────────────────────────────────────────────────
 
+function normalizeDomain(d: string): string {
+  return d.replace(/^www\./i, "").toLowerCase();
+}
+
 const TOOL_DOMAINS = new Set([
-  "github.com","npmjs.com","pypi.org","vercel.com","netlify.com","railway.app",
-  "supabase.com","figma.com","notion.com","linear.app","airtable.com",
+  "github.com","gitlab.com","bitbucket.org",
+  "npmjs.com","pypi.org","crates.io","packagist.org",
+  "vercel.com","netlify.com","railway.app","render.com","fly.io",
+  "supabase.com","neon.tech","planetscale.com",
+  "figma.com","notion.com","linear.app","airtable.com","clickup.com","asana.com",
   "zapier.com","make.com","n8n.io","retool.com","cloudflare.com",
   "stackoverflow.com","developer.mozilla.org","producthunt.com",
+  "openai.com","platform.openai.com","chatgpt.com","anthropic.com","claude.ai",
+  "replicate.com","huggingface.co","perplexity.ai","colab.research.google.com",
+  "regex101.com","regexr.com","jsonlint.com","jqplay.org",
+  "codesandbox.io","stackblitz.com","jsfiddle.net","replit.com",
+  "cursor.com","cursor.sh","v0.dev","bolt.new","eigent.ai",
+  "readthedocs.io","readme.io","swagger.io","postman.com",
 ]);
 const ARTICLE_DOMAINS = new Set([
   "medium.com","substack.com","dev.to","hashnode.com","nytimes.com",
@@ -204,9 +327,12 @@ const TOOL_PATTERNS = [
 ];
 
 function heuristicResult(input: BuildLinkProfileInput): LlmItemResult {
-  const d = input.domain;
+  const d = normalizeDomain(input.domain);
   const t = (input.title ?? "") + " " + (input.description ?? "");
-  const isVisual = VISUAL_DOMAINS.has(d) || ["image","pinterest-brand"].includes(input.provider);
+  const isVisual =
+    VISUAL_DOMAINS.has(d) ||
+    d.includes("pinterest.") ||
+    ["image", "pinterest-brand"].includes(input.provider);
   const isCultural = CULTURAL_DOMAINS.has(d);
   const isTool = TOOL_DOMAINS.has(d) || TOOL_PATTERNS.some(p => p.test(t));
   const isArticle = ARTICLE_DOMAINS.has(d) || input.provider === "article";
@@ -217,9 +343,12 @@ function heuristicResult(input: BuildLinkProfileInput): LlmItemResult {
   let primaryIntent: SaveIntent;
   let contaminationRisk: number;
 
+  const imageLikeProvider = ["image", "pinterest-brand"].includes(input.provider);
+
   if (isVisual) { itemKind = "visual_reference"; primaryIntent = "visual_inspiration"; contaminationRisk = 0.05; }
   else if (isCultural) { itemKind = "cultural_reference"; primaryIntent = "cultural_signal"; contaminationRisk = 0.1; }
-  else if (isTool) { itemKind = "tool"; primaryIntent = "tool_for_future_use"; contaminationRisk = 0.85; }
+  else if (isTool && !imageLikeProvider) { itemKind = "tool"; primaryIntent = "tool_for_future_use"; contaminationRisk = 0.9; }
+  else if (isTool && imageLikeProvider) { itemKind = "visual_reference"; primaryIntent = "visual_inspiration"; contaminationRisk = 0.2; }
   else if (isArticle) { itemKind = "article"; primaryIntent = "read_later"; contaminationRisk = 0.65; }
   else if (isVideo) { itemKind = "video"; primaryIntent = "mood_capture"; contaminationRisk = 0.3; }
   else if (isSocial) { itemKind = "social_post"; primaryIntent = input.imageUrl ? "visual_inspiration" : "cultural_signal"; contaminationRisk = 0.3; }
@@ -241,7 +370,7 @@ function heuristicResult(input: BuildLinkProfileInput): LlmItemResult {
       identity_signal_relevance: isCultural ? 0.7 : isVisual ? 0.6 : isSocial ? 0.5 : 0.2,
     },
     profile_routing: {
-      affects_visual_profile: visualRel >= 0.4,
+      affects_visual_profile: isTool && !imageLikeProvider ? false : visualRel >= 0.4,
       affects_cultural_profile: culturalRel >= 0.4,
       affects_utility_profile: utilityRel >= 0.4,
       affects_workflow_profile: isTool,
@@ -257,9 +386,9 @@ function heuristicResult(input: BuildLinkProfileInput): LlmItemResult {
       confidence: 0.4,
     },
     taste_interpretation: {
-      should_affect_aesthetic_profile: contaminationRisk < 0.5,
+      should_affect_aesthetic_profile: isTool && !imageLikeProvider ? false : contaminationRisk < 0.5,
       should_affect_cultural_profile: culturalRel >= 0.4,
-      weight_in_aesthetic_aggregation: wAesthetic,
+      weight_in_aesthetic_aggregation: isTool && !imageLikeProvider ? 0.08 : wAesthetic,
       weight_in_cultural_aggregation: parseFloat(culturalRel.toFixed(2)),
       weight_in_utility_aggregation: parseFloat(utilityRel.toFixed(2)),
       aesthetic_contamination_risk: contaminationRisk,
@@ -290,29 +419,33 @@ function buildVisualLayer(
   }
 
   if (vp) {
-    // Map from VisualAnalysisProfile (analyze-image.ts) to VisualLayer
     const colorTone: string[] = [];
     if (vp.color_profile?.saturation) colorTone.push(vp.color_profile.saturation);
     if (vp.color_profile?.temperature) colorTone.push(vp.color_profile.temperature);
-    const polishMap: Record<string, PolishLevel> = {
-      "strongly authored": "raw", "authored": "lo-fi",
-      "neutral": "mixed", "template-like": "refined", "algorithmic": "highly-polished",
-    };
+    const novelty = typeof vp.visual_novelty === "number" ? Math.min(1, Math.max(0, vp.visual_novelty)) : 0.4;
+    const sigs = filterTags([...(vp.stylistic_signals ?? [])]);
+    if (vp.controlled_weirdness?.trim()) sigs.push(vp.controlled_weirdness.trim().slice(0, 48));
     return {
       present: true,
-      importance: vp.confidence ?? 0.6,
+      importance: Math.min(1, Math.max(0.2, (vp.confidence ?? 0.55) * 0.65 + novelty * 0.35)),
       depicted_subject: vp.depicted ? [vp.depicted] : [],
       image_type: (vp.image_type as ImageType) ?? "unknown",
       composition: vp.composition ? [vp.composition] : [],
       color_tone: colorTone.length ? colorTone : (vp.color_profile?.dominant_hues ?? []),
       texture_materiality: vp.materiality ?? [],
-      polish_level: polishMap[vp.authorship_signal ?? "neutral"] ?? "mixed",
-      visual_authorship: Math.min(1, (vp.visual_novelty ?? 0.5) + 0.2),
-      visual_oddity: vp.visual_novelty ?? 0.5,
-      stylistic_signals: filterTags(vp.stylistic_signals ?? []),
+      polish_level: polishFromAuthorship(vp.authorship_signal, novelty),
+      visual_authorship: authorshipNumeric(vp.authorship_signal),
+      visual_oddity: novelty,
+      stylistic_signals: filterTags(sigs),
       cultural_signal: [],
       emotional_tone: vp.emotional_tone ?? [],
-      confidence: vp.confidence ?? 0.6,
+      confidence: Math.min(0.95, Math.max(0.18, vp.confidence ?? 0.55)),
+      graphic_execution_read: vp.execution_read?.trim() || undefined,
+      visual_attraction_hypothesis: [vp.non_subject_attraction, vp.visual_attraction]
+        .filter(Boolean)
+        .join(" ")
+        .trim()
+        .slice(0, 420) || undefined,
     };
   }
 
@@ -350,6 +483,8 @@ function buildVectorText(
   if (vl.stylistic_signals.length) parts.push(`Visual style: ${vl.stylistic_signals.join(", ")}`);
   if (vl.emotional_tone.length) parts.push(`Visual mood: ${vl.emotional_tone.join(", ")}`);
   if (vl.texture_materiality.length) parts.push(`Materiality: ${vl.texture_materiality.join(", ")}`);
+  if (vl.graphic_execution_read) parts.push(`Graphic execution: ${vl.graphic_execution_read}`);
+  if (vl.visual_attraction_hypothesis) parts.push(`Visual attraction read: ${vl.visual_attraction_hypothesis}`);
   if (llm.taste_interpretation.interpretation.length) parts.push(`Interpretation: ${llm.taste_interpretation.interpretation.join(" ")}`);
   parts.push(`Aesthetic weight: ${llm.taste_interpretation.weight_in_aesthetic_aggregation.toFixed(2)}`);
   return parts.filter(Boolean).join("; ");
@@ -387,6 +522,9 @@ export type BuildLinkProfileInput = {
     visual_novelty?: number;
     depicted?: string;
     visual_attraction?: string;
+    execution_read?: string;
+    controlled_weirdness?: string;
+    non_subject_attraction?: string;
     confidence?: number;
   } | null;
   userNote?: string | null;
@@ -405,6 +543,7 @@ export async function buildLinkAiProfileAsync(
     llmResult = await extractWithLlm(input, client);
   }
   if (!llmResult) llmResult = heuristicResult(input);
+  llmResult = applyUtilityVisualGuards(input, llmResult);
 
   const visualLayer = buildVisualLayer(Boolean(input.imageUrl), input.visualProfile, input.visionDescription);
   const vectorText = buildVectorText(llmResult, visualLayer, input.title ?? null);
@@ -415,7 +554,7 @@ export async function buildLinkAiProfileAsync(
     domain: input.domain,
     canonical_url: input.canonicalUrl ?? null,
     title: input.title ?? null,
-    item_kind: llmResult.semantic_layer.use_case === "tool" ? "tool" : "mixed",
+    item_kind: itemKindFromLlm(llmResult),
     content_format: input.provider,
     source_kind: input.provider,
     save_intent: llmResult.save_intent,
