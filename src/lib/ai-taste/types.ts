@@ -1,394 +1,312 @@
 /**
- * Taste Dossier v2 — machine-readable latent preference graph.
- * Optimized for downstream LLM conditioning, NOT for human display.
+ * Taste Dossier v4 — machine-readable latent preference graph.
  *
- * Key design principles:
- * - Separates raw facts (Layer 1) from taste inference (Layer 2) from profile (Layer 3)
- * - Aesthetic axes use [-1, 1] floats so they can be aggregated and compared
- * - confidence scores let a downstream model weight signals appropriately
- * - platform/source names never appear as taste descriptors
+ * Architecture:
+ *   saved_items          — per-item classification, visual layer, semantic layer, taste interpretation
+ *   visual_profile       — aggregated from items with visual_taste_relevance >= 0.4
+ *   cultural_profile     — aggregated from items with cultural_taste_relevance >= 0.4
+ *   utility_profile      — aggregated from items with utility_relevance >= 0.4
+ *   save_behavior_profile — meta-profile: how the user saves, not what
+ *   taste_psychology     — non-clinical hypotheses, conservative and evidence-backed
+ *   master_summary       — top-level synthesis for LLM conditioning
+ *
+ * Critical rule: utilitarian links MUST NOT contaminate the visual taste profile.
+ * Every item is classified by save_intent + relevance before aggregation.
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LAYER 1 — RAW FACTS (observable, low-inference)
+// ITEM-LEVEL TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type SourceKind =
-  | "editorial"
-  | "social"
-  | "design-reference"
-  | "film-reference"
-  | "image-board"
-  | "workspace"
-  | "archive"
-  | "product"
-  | "video"
-  | "newsletter"
-  | "portfolio"
-  | "mixed";
-
-export type ContentType =
-  | "article"
-  | "portfolio"
-  | "post"
-  | "thread"
-  | "video"
-  | "image"
-  | "pin"
-  | "landing-page"
-  | "archive"
-  | "gallery"
-  | "note"
-  | "newsletter"
+export type ItemKind =
+  | "visual_reference"
+  | "cultural_reference"
   | "tool"
+  | "article"
+  | "tutorial"
+  | "product"
+  | "social_post"
+  | "video"
   | "mixed";
 
-export type TasteRole =
-  | "identity-signal"
-  | "visual-inspiration"
-  | "world-building"
-  | "research-reference"
-  | "tonal-reference"
-  | "creative-trigger"
-  | "cultural-anchor"
-  | "mood-capture";
+export type SaveIntent =
+  | "visual_inspiration"
+  | "mood_capture"
+  | "identity_signal"
+  | "cultural_signal"
+  | "read_later"
+  | "practical_reference"
+  | "tool_for_future_use"
+  | "workflow_resource"
+  | "research";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// VISUAL ANALYSIS — per-item structured image profile
-// ─────────────────────────────────────────────────────────────────────────────
+export type SaveIntentBlock = {
+  primary: SaveIntent;
+  secondary: SaveIntent[];
+  confidence: number;
+};
+
+export type RelevanceScores = {
+  taste_relevance: number;
+  visual_taste_relevance: number;
+  cultural_taste_relevance: number;
+  utility_relevance: number;
+  workflow_relevance: number;
+  identity_signal_relevance: number;
+};
+
+export type ProfileRouting = {
+  affects_visual_profile: boolean;
+  affects_cultural_profile: boolean;
+  affects_utility_profile: boolean;
+  affects_workflow_profile: boolean;
+  affects_persona_profile: boolean;
+};
+
+// ─── Visual layer ─────────────────────────────────────────────────────────────
 
 export type ImageType =
-  | "photograph"
-  | "illustration"
-  | "screenshot"
-  | "graphic-design"
-  | "collage"
-  | "product-photo"
-  | "poster"
-  | "ui-screenshot"
-  | "video-thumbnail"
-  | "pin-board"
-  | "text-image"
-  | "abstract"
-  | "mixed"
-  | "unknown";
+  | "object_photo" | "photograph" | "illustration" | "screenshot"
+  | "graphic_design" | "collage" | "product_photo" | "poster"
+  | "ui_screenshot" | "video_thumbnail" | "pin_board" | "text_image"
+  | "abstract" | "mixed" | "unknown";
 
-export type VisualAnalysisProfile = {
+export type PolishLevel = "raw" | "lo-fi" | "mixed" | "refined" | "highly-polished";
+
+export type VisualLayer = {
+  present: boolean;
+  importance: number;                    // 0–1: how central is the visual to this save
+  depicted_subject: string[];            // factual: what is shown
   image_type: ImageType;
-
-  /** Compositional structure: e.g. "centered subject on clean background", "grid-based layout" */
-  composition: string;
-
-  /** Dominant palette and lighting quality */
-  color_profile: {
-    dominant_hues: string[];    // e.g. ["muted earth tones", "off-white", "deep navy"]
-    saturation: "desaturated" | "muted" | "moderate" | "saturated" | "hyper-saturated";
-    brightness: "dark" | "dim" | "balanced" | "bright" | "high-key";
-    temperature: "warm" | "neutral" | "cool" | "mixed";
-    description: string;        // 1 sentence
-  };
-
-  /** Physical or tactile quality suggested by the image */
-  materiality: string[];        // e.g. ["concrete", "worn paper", "soft cotton", "raw metal"]
-
-  /**
-   * Aesthetic/stylistic signals — the key taste vocabulary.
-   * Use specific terms from this vocabulary when applicable:
-   * found-object | editorial | internet-native | lo-fi | subcultural |
-   * art-house | industrial | graphic | tactile | archive-like | authored |
-   * non-template | institutional | brutalist | organic | decorative |
-   * maximalist | minimal | vernacular | aspirational | anti-aesthetic |
-   * cinematic | printed-matter | collaged | referential | pop | flat
-   */
-  stylistic_signals: string[];
-
-  /** Mood/emotional atmosphere conveyed by the image */
-  emotional_tone: string[];     // e.g. ["quiet melancholy", "sharp clarity", "warm nostalgia"]
-
-  /**
-   * Whether the image feels authored/intentional vs. generic/template:
-   * "strongly authored" | "authored" | "neutral" | "template-like" | "algorithmic"
-   */
-  authorship_signal: string;
-
-  /**
-   * How surprising/non-generic this image feels in context of mainstream saves:
-   * 0.0 = completely generic, 1.0 = highly distinctive/unusual
-   */
-  visual_novelty: number;
-
-  /** What is depicted — factual layer */
-  depicted: string;             // 1 sentence: what you see
-
-  /** Why this visual might attract the saver — inferred aesthetic pull */
-  visual_attraction: string;    // 1 sentence: what aesthetic quality draws attention
-
-  confidence: number;           // 0.0–1.0
-};
-
-// Profile-level visual taste aggregation
-export type VisualPreferenceAxes = {
-  raw_vs_refined: number;       // -1 raw/unpolished ↔ +1 highly refined
-  sparse_vs_dense: number;      // -1 minimal/sparse ↔ +1 dense/layered
-  warm_vs_cool: number;         // -1 warm ↔ +1 cool
-  analog_vs_digital: number;    // -1 film/print/analog ↔ +1 screen-native/digital
-  authored_vs_generic: number;  // -1 template/generic ↔ +1 strongly authored
-  dark_vs_bright: number;       // -1 dark/moody ↔ +1 bright/clean
-};
-
-export type VisualTasteCluster = {
-  label: string;
-  description: string;
-  stylistic_signals: string[];
-  evidence_item_indices: number[];
-  strength: number;             // 0.0–1.0
-};
-
-export type VisualTasteSummary = {
-  /** Most recurrent stylistic signals across high-confidence visual items */
-  recurring_visual_signals: { signal: string; count: number; item_indices: number[] }[];
-  visual_preference_axes: VisualPreferenceAxes;
-  repeated_moods: string[];
-  dominant_color_tendencies: string[];
-  authorship_tendency: string;  // e.g. "strong preference for authored/non-template visuals"
-  visual_taste_clusters: VisualTasteCluster[];
-  /** Items with no/low-quality visuals — excluded from visual analysis */
-  visual_coverage: number;      // fraction of items that had analyzable images
+  composition: string[];                 // e.g. ["object-centric", "centered subject"]
+  color_tone: string[];                  // e.g. ["muted", "warm-neutral"]
+  texture_materiality: string[];         // e.g. ["metal", "rough", "assembled"]
+  polish_level: PolishLevel;
+  visual_authorship: number;             // 0–1: how authored/intentional vs. generic
+  visual_oddity: number;                 // 0–1: how unusual/non-mainstream
+  stylistic_signals: string[];           // vocabulary: found-object, editorial, lo-fi, etc.
+  cultural_signal: string[];             // cultural anchors if visible
+  emotional_tone: string[];              // e.g. ["dry", "curious", "slightly strange"]
   confidence: number;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LAYER 2 — ITEM-LEVEL TASTE INTERPRETATION
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Semantic layer ───────────────────────────────────────────────────────────
 
-/**
- * Aesthetic axes on a [-1, 1] float scale.
- * 0 = neutral / unclear.
- * Named as "A_vs_B": -1 means strongly A, +1 means strongly B.
- */
-export type AestheticAxes = {
-  minimal_vs_dense: number;       // -1 minimal/sparse ↔ +1 dense/maximal
-  raw_vs_polished: number;        // -1 raw/rough ↔ +1 refined/polished
-  editorial_vs_playful: number;   // -1 serious/editorial ↔ +1 playful/experimental
-  underground_vs_mainstream: number; // -1 niche/underground ↔ +1 mainstream/popular
-  analog_vs_digital: number;      // -1 analog/physical ↔ +1 digital/screen-native
-  warm_vs_cold: number;           // -1 warm/organic ↔ +1 cold/clinical
-  decorative_vs_structural: number; // -1 ornamental ↔ +1 functional/structural
-  utility_vs_atmosphere: number;  // -1 utility-first ↔ +1 atmosphere/mood-first
-};
-
-export type AppealSignals = {
-  visual: string[];       // visual / compositional / material appeal
-  conceptual: string[];   // intellectual / conceptual / thematic appeal
-  emotional: string[];    // emotional / affective draw
-  functional: string[];   // practical / research / tool value
-};
-
-export type ItemTasteProfile = {
-  // Raw facts (Layer 1)
-  url: string;
-  domain: string;
-  source_kind: SourceKind;
-  content_type: ContentType;
-  title: string | null;
-  language: string | null;
-
-  // Inferred interpretation (Layer 2)
+export type SemanticLayer = {
   short_summary: string;
-  save_reason: string;
-  appeal_signals: AppealSignals;
-  style_descriptors: string[];
-  mood_descriptors: string[];
-  cultural_references: string[];
-  taste_role: TasteRole[];
-  aesthetic_axes: AestheticAxes;
+  topic_tags: string[];
+  use_case: string;                      // e.g. "inspiration", "reference", "learning"
+  confidence: number;
+};
 
-  // Evidence/interpretation split
+// ─── Taste interpretation ─────────────────────────────────────────────────────
+
+export type TasteInterpretation = {
+  should_affect_aesthetic_profile: boolean;
+  should_affect_cultural_profile: boolean;
+  weight_in_aesthetic_aggregation: number; // 0–1
+  weight_in_cultural_aggregation: number;
+  weight_in_utility_aggregation: number;
+  aesthetic_contamination_risk: number;    // 0–1
+  save_reason: string;
   observable_evidence: string[];
   interpretation: string[];
-  confidence: number;  // 0.0–1.0
-
-  // Visual analysis — null if no image available or analysis failed
-  visual_analysis: VisualAnalysisProfile | null;
-
-  // Embedding-ready (includes visual signals when available)
-  vector_ready_text: string;
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LAYER 3 — PROFILE-LEVEL AGGREGATION
-// ─────────────────────────────────────────────────────────────────────────────
-
-export type ProfileAestheticAxes = {
-  mainstream_vs_niche: number;
-  loud_vs_quiet: number;
-  utility_vs_aesthetic: number;
-  literal_vs_interpretive: number;
-  clean_vs_textured: number;
-  corporate_vs_independent: number;
-};
-
-export type EvidenceCluster = {
-  label: string;
-  description: string;
-  evidence_item_indices: number[];
-  strength: number;  // 0.0–1.0
-};
-
-// ─── Signal tiers ──────────────────────────────────────────────────────────────
-
-/** A claim with explicit evidence links and coverage. */
-export type EvidencedClaim = {
-  claim: string;
-  evidence_item_indices: number[];
-  coverage: number;       // fraction of total items that support this, 0.0–1.0
-  confidence: number;     // 0.0–1.0
-};
-
-export type TasteProfileSummary = {
-  /** Highly recurrent, multi-item backed signals */
-  strong_signals: EvidencedClaim[];
-  /** Appear in 2+ items but not dominant */
-  emerging_signals: EvidencedClaim[];
-  /** Appear in 1 item or weakly inferred — explicitly speculative */
-  weak_hypotheses: EvidencedClaim[];
-
-  visual_preferences: string[];
-  conceptual_preferences: string[];
-  emotional_preferences: string[];
-  cultural_gravity: string[];
-  preference_axes: ProfileAestheticAxes;
-
-  /** Only populated when evidence is real — omit otherwise */
-  likely_dislikes: EvidencedClaim[];
-  /** Items they would probably save next, grounded in patterns */
-  likely_likes_more_of: string[];
-
-  evidence_backed_clusters: EvidenceCluster[];
-
-  /** Language: "current saves suggest..." never "this person is..." */
-  profile_summary_short: string;
-  profile_summary_rich: string;
-  vector_ready_text: string;
   confidence: number;
 };
 
-// ─── Taste psychology layer ────────────────────────────────────────────────────
+// ─── Full item ────────────────────────────────────────────────────────────────
 
-/**
- * Non-clinical personality/cognition hypotheses inferred from saved links.
- *
- * GUARDRAILS (enforced in prompts and types):
- * - These are probabilistic inferences, not facts or diagnoses
- * - No mental health, trauma, attachment style, or intelligence claims
- * - No MBTI mapping
- * - No clinical terminology
- * - Language must be explicitly hedged: "save patterns suggest...", "tentatively..."
- */
-export type TastePsychologyDimension = {
+export type SavedItemV4 = {
+  item_index: number;
+  url: string;
+  domain: string;
+  canonical_url: string | null;
+  title: string | null;
+
+  item_kind: ItemKind;
+  content_format: string;                // content_type shorthand
+  source_kind: string;
+
+  save_intent: SaveIntentBlock;
+  relevance: RelevanceScores;
+  profile_routing: ProfileRouting;
+
+  visual_layer: VisualLayer;
+  semantic_layer: SemanticLayer;
+  taste_interpretation: TasteInterpretation;
+
+  vector_ready_text: string;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE-LEVEL TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type EvidencedSignal = {
   label: string;
-  /** e.g. "high" | "moderate-high" | "moderate" | "low" | "unclear" */
-  estimated_level: string;
-  /** 0.0–1.0 — keep low unless multiple items support it */
+  strength: number;
+  confidence: number;
+  coverage_count: number;
+  evidence_item_indices: number[];
+};
+
+// ─── Visual profile ───────────────────────────────────────────────────────────
+
+export type VisualPreferenceAxes = {
+  clean_vs_textured: number;
+  polished_vs_raw: number;
+  commercial_vs_authored: number;
+  literal_vs_symbolic: number;
+  mainstream_vs_subcultural: number;
+  decorative_vs_structural: number;
+};
+
+export type VisualProfile = {
+  summary_short: string;
+  recurring_visual_signals: EvidencedSignal[];
+  visual_preference_axes: VisualPreferenceAxes;
+  repeated_moods: string[];
+  likely_visual_likes_more_of: string[];
+  confidence: number;
+  vector_ready_text: string;
+};
+
+// ─── Cultural profile ─────────────────────────────────────────────────────────
+
+export type CulturalProfile = {
+  summary_short: string;
+  core_attraction: string[];
+  recurring_patterns: EvidencedSignal[];
+  cultural_gravity: string[];
+  likely_likes_more_of: string[];
+  likely_dislikes: string[];
+  confidence: number;
+  vector_ready_text: string;
+};
+
+// ─── Utility profile ──────────────────────────────────────────────────────────
+
+export type UtilityProfile = {
+  summary_short: string;
+  tooling_interests: EvidencedSignal[];
+  workflow_preferences: string[];
+  should_not_contaminate_visual_profile: true;
+  confidence: number;
+  vector_ready_text: string;
+};
+
+// ─── Save behavior profile ────────────────────────────────────────────────────
+
+export type SelectionStyle = {
+  collects_for_visual_reference: number;
+  collects_for_cultural_signal: number;
+  collects_for_future_use: number;
+  collects_for_identity_expression: number;
+  collects_for_practical_implementation: number;
+  collects_rare_over_popular: number;
+  collects_authored_over_generic: number;
+};
+
+export type SaveBehaviorProfile = {
+  summary_short: string;
+  selection_style: SelectionStyle;
+  save_intent_distribution: { intent: SaveIntent; count: number }[];
+  behavioral_notes: string[];
+  confidence: number;
+};
+
+// ─── Taste psychology ─────────────────────────────────────────────────────────
+
+export type TraitHypothesis = {
+  trait: string;
+  label: string;
+  estimated_level: number;            // 0–1 (not a category — a scalar)
   confidence: number;
   evidence: string[];
   coverage_item_indices: number[];
 };
 
 export type PersonaBlendEntry = {
-  archetype: string;      // e.g. "curatorial aesthete", "independent researcher"
-  weight: number;         // 0.0–1.0, all weights should sum ~1.0
-  rationale: string;      // 1 sentence, evidence-grounded
+  persona: string;
+  weight: number;
+  description: string;
 };
 
-export type SelectionStyleDimension = {
-  label: string;          // e.g. "curation_density", "authorship_sensitivity"
-  tendency: string;       // e.g. "saves few, high-filter" / "saves broadly"
-  confidence: number;
-  evidence: string[];
-};
-
-export type TastePsychology = {
-  /**
-   * Explicit non-clinical disclaimer — always present in output.
-   * Downstream models must treat this section as probabilistic inference only.
-   */
-  disclaimer: "This section contains probabilistic inferences from saved links only. It is non-clinical, non-diagnostic, and explicitly uncertain. Do not treat any claim here as fact.";
-
-  trait_hypotheses: {
-    openness_to_experience: TastePsychologyDimension;
-    aesthetic_sensitivity: TastePsychologyDimension;
-    need_for_cognition: TastePsychologyDimension;
-    tolerance_for_ambiguity: TastePsychologyDimension;
-    novelty_seeking: TastePsychologyDimension;
-    independence_of_taste: TastePsychologyDimension;
-    identity_signaling_via_curation: TastePsychologyDimension;
+export type TastePsychologyV4 = {
+  guardrails: {
+    non_clinical: true;
+    non_diagnostic: true;
+    inference_only_from_saved_links: true;
+    explicitly_uncertain: true;
   };
-
+  trait_hypotheses: TraitHypothesis[];
   persona_blend: PersonaBlendEntry[];
-  selection_style: SelectionStyleDimension[];
-
-  /** 1–2 sentence synthesis — hedged, non-flattering, machine-targeted */
-  synthesis: string;
   confidence: number;
+  vector_ready_text: string;
+};
+
+// ─── Master summary ───────────────────────────────────────────────────────────
+
+export type MasterSummary = {
+  profile_summary_short: string;
+  profile_summary_rich: string;
+  confidence: number;
+  vector_ready_text: string;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FULL DOSSIER
+// TOP-LEVEL DOSSIER v4
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type TasteDossierV2 = {
+export type TasteDossierV4 = {
   profile_id: string;
-  profile_version: "taste_dossier_v2";
+  profile_version: "taste_dossier_v4";
   generated_at: string;
   stats: {
     item_count: number;
     domain_count: number;
     language_mix: string[];
-    source_mix: Record<string, number>;
-    content_type_mix: Record<string, number>;
-    has_vision_analysis: boolean;
-    has_transcripts: boolean;
+    source_mix: { source: string; count: number }[];
   };
-  saved_items: ItemTasteProfile[];
-  taste_summary: TasteProfileSummary;
-  /** Aggregated visual language analysis across all items with images */
-  visual_taste_summary: VisualTasteSummary | null;
-  /** Non-clinical cognitive/aesthetic style hypotheses. Null if insufficient data (<4 items). */
-  taste_psychology: TastePsychology | null;
+  saved_items: SavedItemV4[];
+  visual_profile: VisualProfile | null;
+  cultural_profile: CulturalProfile | null;
+  utility_profile: UtilityProfile | null;
+  save_behavior_profile: SaveBehaviorProfile;
+  taste_psychology: TastePsychologyV4 | null;
+  master_summary: MasterSummary;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LEGACY — kept for backward compat during transition, remove in v3
+// LEGACY COMPAT — kept so export-payload.ts compiles during migration
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** @deprecated Use ItemTasteProfile instead */
-export type AiLinkProfile = ItemTasteProfile & {
-  // v1 compat shims so old stored JSON still parses
-  schema_version?: number;
+/** @deprecated — use SavedItemV4 */
+export type ItemTasteProfile = SavedItemV4 & {
+  // v3 compat shims
   normalized_url?: string;
-  canonical_url?: string | null;
-  content_type_legacy?: string;
-  summary?: string;
-  description?: string | null;
-  favicon_url?: string | null;
-  author_publisher?: string | null;
-  publish_date?: string | null;
-  main_image?: string | null;
-  extracted_text_excerpt?: string;
-  topics?: string[];
-  tags?: string[];
-  entities?: string[];
-  mood_tone?: string[];
-  aesthetic_style?: string[];
-  format_classification?: string;
-  language_guess?: string;
-  safety_fetch_status?: string;
-  vision_description?: string | null;
-  user_note?: string | null;
+  short_summary?: string;
+  save_reason?: string;
+  appeal_signals?: { visual: string[]; conceptual: string[]; emotional: string[]; functional: string[] };
+  style_descriptors?: string[];
+  mood_descriptors?: string[];
+  cultural_references?: string[];
+  taste_role?: string[];
+  aesthetic_axes?: Record<string, number>;
+  observable_evidence?: string[];
+  interpretation?: string[];
+  confidence?: number;
+  visual_analysis?: unknown;
+  classification?: unknown;
+  language?: string | null;
+  source_kind?: string;
+  content_type?: string;
 };
 
-/** @deprecated Use TasteDossierV2 instead */
+/** @deprecated — use TasteDossierV4 */
+export type TasteDossierV2 = TasteDossierV4;
+
+/** @deprecated */
 export type AiMasterProfile = {
   schema_version: 1;
   user_slug: string;
@@ -405,5 +323,36 @@ export type AiMasterProfile = {
     providers: Record<string, number>;
   };
   semantic_overview: string;
-  saved_items: AiLinkProfile[];
+  saved_items: ItemTasteProfile[];
+  // v4 extras
+  visual_profile?: VisualProfile | null;
+  cultural_profile?: CulturalProfile | null;
+  utility_profile?: UtilityProfile | null;
+  save_behavior_profile?: SaveBehaviorProfile;
+  taste_psychology?: TastePsychologyV4 | null;
+  master_summary?: MasterSummary;
+  taste_summary?: unknown;
+  visual_taste_summary?: unknown;
+};
+
+// Re-export old names that other files may reference
+export type { VisualPreferenceAxes as VisualPreferenceAxesOld };
+export type TastePsychology = TastePsychologyV4;
+export type VisualTasteSummary = VisualProfile;
+export type TasteProfileSummary = { profile_summary_short: string; profile_summary_rich: string; confidence: number };
+export type EvidencedClaim = EvidencedSignal;
+export type ProfileAestheticAxes = VisualPreferenceAxes;
+export type ItemClassification = {
+  item_kind: ItemKind;
+  save_intent: SaveIntentBlock;
+  relevance_scores: RelevanceScores;
+  routing_flags: ProfileRouting;
+  aggregation_weights: {
+    should_affect_aesthetic_profile: boolean;
+    should_affect_cultural_profile: boolean;
+    weight_in_aesthetic_aggregation: number;
+    weight_in_cultural_aggregation: number;
+    weight_in_utility_aggregation: number;
+  };
+  aesthetic_contamination_risk: number;
 };

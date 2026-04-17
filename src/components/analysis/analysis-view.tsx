@@ -106,22 +106,22 @@ export function AnalysisView({
                 {item.url}
               </a>
               <p className="mt-2 text-xs text-muted-foreground">
-                {item.content_type} · {item.domain}
+                {item.content_format ?? item.item_kind} · {item.domain}
               </p>
-              {item.short_summary ? (
+              {item.semantic_layer?.short_summary ? (
                 <p className="mt-2 text-sm leading-relaxed text-foreground">
-                  {item.short_summary}
+                  {item.semantic_layer.short_summary}
                 </p>
               ) : null}
-              {item.save_reason ? (
+              {item.taste_interpretation?.save_reason ? (
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground italic">
-                  {item.save_reason}
+                  {item.taste_interpretation.save_reason}
                 </p>
               ) : null}
-              {item.style_descriptors?.length > 0 && (
+              {(item.visual_layer?.stylistic_signals?.length ?? 0) > 0 && (
                 <p className="mt-2 text-xs text-foreground">
                   <span className="font-medium text-muted-foreground">Style: </span>
-                  {item.style_descriptors.join(", ")}
+                  {item.visual_layer.stylistic_signals.join(", ")}
                 </p>
               )}
               {item.vector_ready_text ? (

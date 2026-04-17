@@ -1,5 +1,5 @@
 import type { Collection, Link } from "@prisma/client";
-import type { AiLinkProfile } from "@/lib/ai-taste/types";
+import type { ItemTasteProfile as AiLinkProfile } from "@/lib/ai-taste/types";
 import type { CollectionWithCount, LinkSerialized } from "@/types/link";
 
 function parseOEmbedJson(

@@ -170,22 +170,20 @@ export function PostDetailPanel({
               AI-readable profile
             </p>
             <p className="mt-2 text-sm leading-relaxed text-foreground">
-              {typeof link.aiProfile.summary === "string"
-                ? link.aiProfile.summary
-                : ""}
+              {link.aiProfile.semantic_layer?.short_summary
+                ?? link.aiProfile.taste_interpretation?.save_reason
+                ?? ""}
             </p>
-            {Array.isArray(link.aiProfile.topics) &&
-            link.aiProfile.topics.length ? (
+            {link.aiProfile.visual_layer?.stylistic_signals?.length ? (
               <p className="mt-2 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Topics: </span>
-                {link.aiProfile.topics.join(", ")}
+                <span className="font-medium text-foreground">Style: </span>
+                {link.aiProfile.visual_layer.stylistic_signals.join(", ")}
               </p>
             ) : null}
-            {Array.isArray(link.aiProfile.mood_tone) &&
-            link.aiProfile.mood_tone.length ? (
+            {link.aiProfile.visual_layer?.emotional_tone?.length ? (
               <p className="mt-1 text-xs text-muted-foreground">
                 <span className="font-medium text-foreground">Mood: </span>
-                {link.aiProfile.mood_tone.join(", ")}
+                {link.aiProfile.visual_layer.emotional_tone.join(", ")}
               </p>
             ) : null}
             <details className="mt-3">
@@ -193,9 +191,7 @@ export function PostDetailPanel({
                 vector_ready_text (for embeddings)
               </summary>
               <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-background p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
-                {typeof link.aiProfile.vector_ready_text === "string"
-                  ? link.aiProfile.vector_ready_text
-                  : ""}
+                {link.aiProfile.vector_ready_text ?? ""}
               </pre>
             </details>
           </div>

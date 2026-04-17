@@ -6,7 +6,21 @@
  */
 
 import OpenAI from "openai";
-import type { VisualAnalysisProfile } from "./types";
+
+// Raw visual analysis result — mirrors the shape expected by build-link-profile.ts
+export type RawVisualAnalysis = {
+  image_type?: string;
+  composition?: string;
+  color_profile?: { saturation?: string; temperature?: string; dominant_hues?: string[]; description?: string };
+  materiality?: string[];
+  stylistic_signals?: string[];
+  emotional_tone?: string[];
+  authorship_signal?: string;
+  visual_novelty?: number;
+  depicted?: string;
+  visual_attraction?: string;
+  confidence?: number;
+};
 
 function getClient(userApiKey?: string | null): OpenAI | null {
   const key = userApiKey || process.env.OPENAI_API_KEY;
@@ -58,7 +72,7 @@ OUTPUT: valid JSON only, no markdown:
 export async function analyzeImageStructured(
   imageUrl: string,
   userApiKey?: string | null
-): Promise<VisualAnalysisProfile | null> {
+): Promise<RawVisualAnalysis | null> {
   const client = getClient(userApiKey);
   if (!client) return null;
   try {
@@ -79,7 +93,7 @@ export async function analyzeImageStructured(
     });
     const raw = response.choices[0]?.message?.content;
     if (!raw) return null;
-    return JSON.parse(raw) as VisualAnalysisProfile;
+    return JSON.parse(raw) as RawVisualAnalysis;
   } catch {
     return null;
   }
@@ -99,9 +113,9 @@ export async function analyzeImageForTaste(
   return [
     result.depicted,
     result.visual_attraction,
-    result.stylistic_signals.join(", "),
-    result.emotional_tone.join(", "),
-    result.color_profile.description,
+    result.stylistic_signals?.join(", "),
+    result.emotional_tone?.join(", "),
+    result.color_profile?.description,
   ].filter(Boolean).join(". ");
 }
 

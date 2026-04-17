@@ -10,7 +10,7 @@ export type LinkProvider =
 
 export type PreviewType = "embed" | "oembed" | "og" | "image" | "fallback";
 
-import type { AiLinkProfile } from "@/lib/ai-taste/types";
+import type { ItemTasteProfile as AiLinkProfile } from "@/lib/ai-taste/types";
 
 /** Safe to pass from RSC to client components */
 export type LinkSerialized = {

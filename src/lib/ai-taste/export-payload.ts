@@ -2,41 +2,39 @@ import type { Collection, Link } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buildLinkAiProfileAsync } from "./build-link-profile";
 import { buildMasterProfile, masterProfileToMarkdown } from "./build-master-profile";
-import type { AiMasterProfile, ItemTasteProfile, TasteDossierV2 } from "./types";
+import type {
+  AiMasterProfile,
+  SavedItemV4,
+  TasteDossierV4,
+} from "./types";
 
 export { masterProfileToMarkdown };
+export type { TasteDossierV4 as TasteDossierExport };
 
-function parseOEmbed(raw: string | null | undefined): Record<string, unknown> | null {
-  if (!raw) return null;
-  try {
-    const v = JSON.parse(raw) as unknown;
-    if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
-  } catch { /* ignore */ }
-  return null;
-}
+// ─────────────────────────────────────────────────────────────────────────────
 
-function parseLinkProfile(json: string | null): ItemTasteProfile | null {
+function parseStoredProfile(json: string | null): SavedItemV4 | null {
   if (!json) return null;
   try {
     const v = JSON.parse(json) as Record<string, unknown>;
-    // Detect v2 by presence of appeal_signals.visual
-    if (v && typeof v.appeal_signals === "object" && v.url && v.domain) {
-      return v as unknown as ItemTasteProfile;
+    // v4 detection: has visual_layer and save_intent
+    if (v && typeof v.visual_layer === "object" && typeof v.save_intent === "object") {
+      return v as unknown as SavedItemV4;
     }
   } catch { /* rebuild */ }
   return null;
 }
 
-async function ensureLinkProfile(
+async function buildItem(
   link: Link,
+  index: number,
   apiKey?: string | null
-): Promise<ItemTasteProfile> {
-  // Try to use cached v2 profile
-  const cached = parseLinkProfile(link.aiProfileJson);
-  if (cached) return cached;
+): Promise<SavedItemV4> {
+  // Try cached v4 profile
+  const cached = parseStoredProfile(link.aiProfileJson);
+  if (cached) return { ...cached, item_index: index };
 
-  const o = parseOEmbed(link.oEmbedJson);
-  const oEmbedAuthor = o && typeof o.author_name === "string" ? o.author_name : null;
+  const oEmbed = link.oEmbedJson ? (() => { try { return JSON.parse(link.oEmbedJson!) as Record<string, unknown>; } catch { return null; } })() : null;
 
   const profile = await buildLinkAiProfileAsync(
     {
@@ -54,11 +52,11 @@ async function ensureLinkProfile(
       author: link.author,
       publishedAt: link.publishedAt,
       extractedText: link.extractedText,
-      oEmbedAuthor,
-      visionDescription: null,
+      oEmbedAuthor: oEmbed && typeof oEmbed.author_name === "string" ? oEmbed.author_name : null,
       userNote: link.note,
     },
-    apiKey
+    apiKey,
+    index
   );
 
   // Cache it
@@ -72,14 +70,12 @@ async function ensureLinkProfile(
   return profile;
 }
 
-// ─── Public export types ──────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Public export types (backward compat)
+// ─────────────────────────────────────────────────────────────────────────────
 
-// TasteDossierV2 re-exported for API consumers
-export type { TasteDossierV2 };
-
-export type TasteExportJson = Omit<TasteDossierV2, "taste_summary"> & {
-  taste_summary: import("./types").TasteProfileSummary;
-  // Backward compat fields
+export type TasteExportJson = TasteDossierV4 & {
+  // Legacy fields consumed by /api/taste/export and /analysis page
   user_profile: {
     slug: string;
     display_name: string | null;
@@ -95,25 +91,22 @@ export type TasteExportJson = Omit<TasteDossierV2, "taste_summary"> & {
   aggregate_stats: AiMasterProfile["aggregate_stats"];
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Main export builder
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function buildTasteExportForSlug(
   slug: string,
   apiKey?: string | null
-): Promise<{
-  json: TasteExportJson;
-  master: AiMasterProfile;
-  collections: Collection[];
-} | null> {
+): Promise<{ json: TasteExportJson; master: AiMasterProfile; collections: Collection[] } | null> {
   const user = await prisma.user.findUnique({ where: { slug } });
   if (!user) return null;
 
-  // Try to load user's own API key if not passed
+  // Resolve API key from user record if not passed
   let resolvedKey = apiKey ?? null;
   if (!resolvedKey) {
     try {
-      const u = await prisma.user.findUnique({
-        where: { id: user.id },
-        select: { openaiApiKey: true },
-      });
+      const u = await prisma.user.findUnique({ where: { id: user.id }, select: { openaiApiKey: true } });
       resolvedKey = u?.openaiApiKey ?? null;
     } catch { /* migration pending */ }
   }
@@ -129,65 +122,55 @@ export async function buildTasteExportForSlug(
     }),
   ]);
 
-  const profiles: ItemTasteProfile[] = [];
+  const profiles: SavedItemV4[] = [];
   const linkIds: string[] = [];
-  for (const link of links) {
-    linkIds.push(link.id);
-    profiles.push(await ensureLinkProfile(link, resolvedKey));
+  for (let i = 0; i < links.length; i++) {
+    linkIds.push(links[i].id);
+    profiles.push(await buildItem(links[i], i, resolvedKey));
   }
 
   const master = await buildMasterProfile(slug, profiles, linkIds, resolvedKey);
 
-  type MasterWithExtras = AiMasterProfile & {
-    taste_summary?: TasteExportJson["taste_summary"];
-    taste_psychology?: import("./types").TastePsychology | null;
-    visual_taste_summary?: import("./types").VisualTasteSummary | null;
-  };
-  const masterExt = master as MasterWithExtras;
+  // Source mix for stats
+  const sourceMap = new Map<string, number>();
+  for (const p of profiles) {
+    const s = p.source_kind;
+    sourceMap.set(s, (sourceMap.get(s) ?? 0) + 1);
+  }
 
-  const tasteSummary: TasteExportJson["taste_summary"] = masterExt.taste_summary ?? {
-    strong_signals: [],
-    emerging_signals: [],
-    weak_hypotheses: [],
-    visual_preferences: master.top_aesthetics.map(a => a.label),
-    conceptual_preferences: [],
-    emotional_preferences: [],
-    cultural_gravity: [],
-    preference_axes: { mainstream_vs_niche: 0, loud_vs_quiet: 0, utility_vs_aesthetic: 0, literal_vs_interpretive: 0, clean_vs_textured: 0, corporate_vs_independent: 0 },
-    likely_dislikes: [],
-    likely_likes_more_of: [],
-    evidence_backed_clusters: master.clusters.map(c => ({ label: c.label, description: c.label, evidence_item_indices: [], strength: 0.5 })),
-    profile_summary_short: master.taste_summary_paragraph,
-    profile_summary_rich: master.taste_summary_paragraph,
-    vector_ready_text: master.semantic_overview,
-    confidence: 0.5,
-  };
-
-  const dossier: TasteDossierV2 = {
+  const dossier: TasteDossierV4 = {
     profile_id: user.slug,
-    profile_version: "taste_dossier_v2",
+    profile_version: "taste_dossier_v4",
     generated_at: master.generated_at,
     stats: {
       item_count: profiles.length,
       domain_count: new Set(profiles.map(p => p.domain)).size,
-      language_mix: Array.from(new Set(profiles.map(p => p.language).filter((l): l is string => Boolean(l)))),
-      source_mix: Object.fromEntries(
-        Array.from(new Set(profiles.map(p => p.source_kind))).map(k => [
-          k, profiles.filter(p => p.source_kind === k).length
-        ])
-      ),
-      content_type_mix: Object.fromEntries(
-        Array.from(new Set(profiles.map(p => p.content_type))).map(k => [
-          k, profiles.filter(p => p.content_type === k).length
-        ])
-      ),
-      has_vision_analysis: profiles.some(p => p.observable_evidence.some(e => e.startsWith("Visual:"))),
-      has_transcripts: profiles.some(p => p.source_kind === "video" && p.confidence > 0.4),
+      language_mix: [],
+      source_mix: Array.from(sourceMap.entries()).map(([source, count]) => ({ source, count })),
     },
     saved_items: profiles,
-    taste_summary: tasteSummary,
-    taste_psychology: masterExt.taste_psychology ?? null,
-    visual_taste_summary: masterExt.visual_taste_summary ?? null,
+    visual_profile: master.visual_profile ?? null,
+    cultural_profile: master.cultural_profile ?? null,
+    utility_profile: master.utility_profile ?? null,
+    save_behavior_profile: master.save_behavior_profile ?? {
+      summary_short: "No behavior data.",
+      selection_style: {
+        collects_for_visual_reference: 0, collects_for_cultural_signal: 0,
+        collects_for_future_use: 0, collects_for_identity_expression: 0,
+        collects_for_practical_implementation: 0, collects_rare_over_popular: 0,
+        collects_authored_over_generic: 0,
+      },
+      save_intent_distribution: [],
+      behavioral_notes: [],
+      confidence: 0,
+    },
+    taste_psychology: master.taste_psychology ?? null,
+    master_summary: master.master_summary ?? {
+      profile_summary_short: master.taste_summary_paragraph,
+      profile_summary_rich: master.taste_summary_paragraph,
+      confidence: 0.5,
+      vector_ready_text: master.semantic_overview,
+    },
   };
 
   const json: TasteExportJson = {
@@ -201,9 +184,7 @@ export async function buildTasteExportForSlug(
       semantic_overview: master.semantic_overview,
       representative_link_ids: master.representative_link_ids,
     },
-    collections: collections.map(c => ({
-      id: c.id, name: c.name, slug: c.slug, link_count: c._count.links,
-    })),
+    collections: collections.map(c => ({ id: c.id, name: c.name, slug: c.slug, link_count: c._count.links })),
     link_ids: linkIds,
     clusters: master.clusters,
     aggregate_stats: master.aggregate_stats,

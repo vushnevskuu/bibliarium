@@ -1,459 +1,355 @@
 /**
- * Layer 3: Evidence-backed profile aggregation + non-clinical taste psychology.
+ * Profile aggregation — v4 architecture.
  *
- * Design principles:
- * - Every claim has evidence_item_indices — no free-floating assertions
- * - Three tiers: strong_signals / emerging_signals / weak_hypotheses
- * - Language: "current saves suggest..." never "this person is..."
- * - likely_dislikes only when real evidence exists
- * - taste_psychology is probabilistic, explicitly non-clinical
+ * Produces 4 separate profile sections + taste_psychology + master_summary.
+ * Items are ROUTED before aggregation based on profile_routing flags.
+ * Utility/tool items CANNOT affect visual_profile.
  */
 
 import OpenAI from "openai";
 import type {
   AiMasterProfile,
-  EvidencedClaim,
-  ItemTasteProfile,
-  ProfileAestheticAxes,
-  TastePsychology,
-  VisualAnalysisProfile,
-  VisualTasteSummary,
-  VisualTasteCluster,
+  CulturalProfile,
+  EvidencedSignal,
+  MasterSummary,
+  PersonaBlendEntry,
+  SaveBehaviorProfile,
+  SavedItemV4,
+  SaveIntent,
+  SelectionStyle,
+  TastePsychologyV4,
+  TraitHypothesis,
+  UtilityProfile,
+  VisualProfile,
 } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Profile aggregation prompt
+// Prompts
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PROFILE_AGGREGATION_PROMPT = `You are building a machine-usable taste graph from analyzed saved links.
+const VISUAL_PROFILE_PROMPT = `Analyze these visual-routed saved items and produce a visual taste profile.
 
-CRITICAL RULES:
-1. Every claim MUST reference evidence_item_indices (which item indices support it)
-2. Coverage = fraction of total items supporting the claim (0.0–1.0)
-3. Use "current saves suggest..." or "save patterns indicate..." — NEVER "this person is..."
-4. Three signal tiers:
-   - strong_signals: 3+ items, confidence >= 0.7
-   - emerging_signals: 2+ items, confidence 0.4–0.7
-   - weak_hypotheses: 1 item or low confidence, < 0.4
-5. Do NOT include likely_dislikes unless at least 2 items provide real counter-signal evidence
-6. Do NOT include flattering generalities — only discriminative, evidence-grounded claims
-7. Reject weak inferences rather than include them with low confidence
-8. Platform names (twitter, youtube, etc.) must NEVER appear as taste signals
-9. Render labels (open-graph-card, social-card, etc.) must NEVER appear
+Only use items explicitly tagged as affecting visual profile. Ignore utility/tool items.
 
-OUTPUT: Valid JSON only, no markdown:
+RULES:
+- "current saves suggest..." language only — no "this person is..."
+- recurring_visual_signals: only include signals appearing in 2+ items
+- strength = frequency-weighted score 0–1
+- likely_visual_likes_more_of: grounded in observed patterns only
+- confidence should reflect evidence quality
+
+OUTPUT valid JSON:
 {
-  "strong_signals": [
-    { "claim": "...", "evidence_item_indices": [0,2,4], "coverage": 0.3, "confidence": 0.8 }
+  "summary_short": "2 sentences starting with 'Current saves suggest...'",
+  "recurring_visual_signals": [
+    { "label": "...", "strength": 0.0, "confidence": 0.0, "coverage_count": 0, "evidence_item_indices": [] }
   ],
-  "emerging_signals": [
-    { "claim": "...", "evidence_item_indices": [1,3], "coverage": 0.13, "confidence": 0.55 }
-  ],
-  "weak_hypotheses": [
-    { "claim": "...", "evidence_item_indices": [5], "coverage": 0.07, "confidence": 0.3 }
-  ],
-  "visual_preferences": ["max 4, direct from item evidence only"],
-  "conceptual_preferences": ["max 4"],
-  "emotional_preferences": ["max 3"],
-  "cultural_gravity": ["max 3, real cultural anchors evidenced by multiple items"],
-  "preference_axes": {
-    "mainstream_vs_niche": 0.0,
-    "loud_vs_quiet": 0.0,
-    "utility_vs_aesthetic": 0.0,
-    "literal_vs_interpretive": 0.0,
+  "visual_preference_axes": {
     "clean_vs_textured": 0.0,
-    "corporate_vs_independent": 0.0
+    "polished_vs_raw": 0.0,
+    "commercial_vs_authored": 0.0,
+    "literal_vs_symbolic": 0.0,
+    "mainstream_vs_subcultural": 0.0,
+    "decorative_vs_structural": 0.0
   },
-  "likely_dislikes": [],
-  "likely_likes_more_of": ["4-6 items they would probably save — grounded in observed patterns"],
-  "evidence_backed_clusters": [
-    {
-      "label": "short cluster name",
-      "description": "what aesthetic/cultural pattern this cluster represents",
-      "evidence_item_indices": [0, 2, 4],
-      "strength": 0.0
-    }
-  ],
-  "profile_summary_short": "2 sentences. Start with 'Current saves suggest...'. No flattery. Discriminative.",
-  "profile_summary_rich": "3-4 sentences. Evidence-grounded. Probabilistic language. Machine-targeted.",
-  "confidence": 0.0
-}
+  "repeated_moods": ["2-4 mood strings from visual items only"],
+  "likely_visual_likes_more_of": ["4-5 specific types of content"],
+  "confidence": 0.0,
+  "vector_ready_text": "compact embedding-ready summary"
+}`;
 
-Preference axes: -1 to +1. 0 = unclear. For mainstream_vs_niche: -1 = strongly niche.
-Output confidence: reflects average evidence quality, not optimism.`;
+const CULTURAL_PROFILE_PROMPT = `Analyze these culturally-routed saved items.
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Taste psychology prompt
-// ─────────────────────────────────────────────────────────────────────────────
+RULES:
+- Evidence-backed claims only
+- core_attraction: 3-4 specific signals (no generic "diverse interests")
+- likely_dislikes: only if real counter-evidence exists in saves, otherwise empty array
+- "current saves suggest..." language
 
-const TASTE_PSYCHOLOGY_PROMPT = `You are inferring non-clinical cognitive and aesthetic style tendencies from a collection of saved links.
-
-ABSOLUTE GUARDRAILS — violating these makes the output useless:
-- This is NOT diagnosis, NOT clinical psychology, NOT therapy
-- Do NOT mention mental health, trauma, attachment style, anxiety, or any clinical condition
-- Do NOT use MBTI types as the core framework
-- Do NOT claim intelligence levels
-- Do NOT claim political views
-- Do NOT be flattering — be accurate and probabilistic
-- LOWER confidence instead of overclaiming
-- If evidence is sparse, output low confidence and short evidence lists
-- Language must be explicitly hedged: "save patterns tentatively suggest...", "weakly indicated by..."
-
-DIMENSIONS TO ANALYZE:
-1. openness_to_experience — tolerance for novel, complex, ambiguous content
-2. aesthetic_sensitivity — depth of visual/sensory discrimination in saves
-3. need_for_cognition — preference for intellectually demanding content
-4. tolerance_for_ambiguity — whether saves embrace or avoid unclear/open-ended content
-5. novelty_seeking — recurring attraction to new/obscure/non-canonical sources
-6. independence_of_taste — resistance to mainstream/algorithmic recommendations
-7. identity_signaling_via_curation — whether saves seem to perform identity vs. private utility
-
-For each dimension output:
-- estimated_level: "high" | "moderate-high" | "moderate" | "low" | "unclear"
-- confidence: 0.0–1.0 (be conservative)
-- evidence: 2-3 specific observations from items
-- coverage_item_indices: which items support it
-
-Also output:
-- persona_blend: 2-3 weighted archetypes (e.g. "curatorial aesthete", "independent researcher", "cultural omnivore") each with weight and 1-sentence rationale
-- selection_style: 2-3 behavioral tendencies (e.g. curation_density, authorship_sensitivity) each with tendency description and evidence
-
-OUTPUT: Valid JSON only:
+OUTPUT valid JSON:
 {
-  "trait_hypotheses": {
-    "openness_to_experience": { "label": "Openness to Experience", "estimated_level": "...", "confidence": 0.0, "evidence": [], "coverage_item_indices": [] },
-    "aesthetic_sensitivity": { "label": "Aesthetic Sensitivity", "estimated_level": "...", "confidence": 0.0, "evidence": [], "coverage_item_indices": [] },
-    "need_for_cognition": { "label": "Need for Cognition", "estimated_level": "...", "confidence": 0.0, "evidence": [], "coverage_item_indices": [] },
-    "tolerance_for_ambiguity": { "label": "Tolerance for Ambiguity", "estimated_level": "...", "confidence": 0.0, "evidence": [], "coverage_item_indices": [] },
-    "novelty_seeking": { "label": "Novelty Seeking", "estimated_level": "...", "confidence": 0.0, "evidence": [], "coverage_item_indices": [] },
-    "independence_of_taste": { "label": "Independence of Taste", "estimated_level": "...", "confidence": 0.0, "evidence": [], "coverage_item_indices": [] },
-    "identity_signaling_via_curation": { "label": "Identity Signaling via Curation", "estimated_level": "...", "confidence": 0.0, "evidence": [], "coverage_item_indices": [] }
-  },
+  "summary_short": "...",
+  "core_attraction": [],
+  "recurring_patterns": [
+    { "label": "...", "strength": 0.0, "confidence": 0.0, "coverage_count": 0, "evidence_item_indices": [] }
+  ],
+  "cultural_gravity": [],
+  "likely_likes_more_of": [],
+  "likely_dislikes": [],
+  "confidence": 0.0,
+  "vector_ready_text": "..."
+}`;
+
+const UTILITY_PROFILE_PROMPT = `Analyze these utility/tool-routed saved items.
+
+OUTPUT valid JSON:
+{
+  "summary_short": "...",
+  "tooling_interests": [
+    { "label": "...", "strength": 0.0, "confidence": 0.0, "coverage_count": 0, "evidence_item_indices": [] }
+  ],
+  "workflow_preferences": ["2-3 behavioral patterns"],
+  "confidence": 0.0,
+  "vector_ready_text": "..."
+}`;
+
+const PSYCHOLOGY_PROMPT = `Infer non-clinical personality and cognition tendencies from saved links.
+
+ABSOLUTE GUARDRAILS:
+- NOT diagnosis, NOT clinical, NOT MBTI
+- No mental health, trauma, intelligence, political claims
+- estimated_level is 0.0–1.0 scalar
+- Lower confidence when evidence is sparse
+- "save patterns tentatively suggest..." language
+
+TRAITS to analyze:
+openness_to_experience, aesthetic_engagement, need_for_cognition,
+tolerance_for_ambiguity, novelty_seeking, independence_of_taste,
+identity_signaling_via_curation
+
+For each: label, estimated_level (0–1), confidence (0–1), evidence (2-3 strings), coverage_item_indices
+
+OUTPUT valid JSON:
+{
+  "trait_hypotheses": [
+    { "trait": "openness_to_experience", "label": "Openness to Experience", "estimated_level": 0.0, "confidence": 0.0, "evidence": [], "coverage_item_indices": [] }
+  ],
   "persona_blend": [
-    { "archetype": "...", "weight": 0.0, "rationale": "..." }
+    { "persona": "...", "weight": 0.0, "description": "..." }
   ],
-  "selection_style": [
-    { "label": "...", "tendency": "...", "confidence": 0.0, "evidence": [] }
-  ],
-  "synthesis": "1-2 sentences. Hedged. Non-flattering. Evidence-grounded.",
-  "confidence": 0.0
+  "confidence": 0.0,
+  "vector_ready_text": "..."
+}`;
+
+const MASTER_SUMMARY_PROMPT = `Write a master summary for a taste dossier. 
+
+Inputs: visual profile summary, cultural profile summary, utility profile notes, save behavior data.
+
+RULES:
+- profile_summary_short: 1-2 sentences. Evidence-grounded. "Current saves suggest..."
+- profile_summary_rich: 3-4 sentences. Probabilistic, specific, non-flattering.
+- vector_ready_text: compact, LLM-conditioning-ready
+
+OUTPUT valid JSON:
+{
+  "profile_summary_short": "...",
+  "profile_summary_rich": "...",
+  "confidence": 0.0,
+  "vector_ready_text": "..."
 }`;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Item context serializer
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildItemsContext(items: ItemTasteProfile[]): string {
-  return items
-    .slice(0, 35)
-    .map((item, i) => {
-      const parts: string[] = [
-        `[${i}] ${item.title ?? item.domain} | ${item.source_kind}/${item.content_type} | conf=${item.confidence.toFixed(2)}`,
-      ];
-      if (item.short_summary) parts.push(`  Summary: ${item.short_summary}`);
-      if (item.save_reason) parts.push(`  Save reason: ${item.save_reason}`);
-      if (item.style_descriptors.length) parts.push(`  Style: ${item.style_descriptors.join(", ")}`);
-      if (item.mood_descriptors.length) parts.push(`  Mood: ${item.mood_descriptors.join(", ")}`);
-      if (item.appeal_signals.visual.length) parts.push(`  Visual: ${item.appeal_signals.visual.join("; ")}`);
-      if (item.appeal_signals.conceptual.length) parts.push(`  Conceptual: ${item.appeal_signals.conceptual.join("; ")}`);
-      if (item.appeal_signals.emotional.length) parts.push(`  Emotional: ${item.appeal_signals.emotional.join("; ")}`);
-      if (item.cultural_references.length) parts.push(`  Cultural: ${item.cultural_references.join(", ")}`);
-      if (item.interpretation.length) parts.push(`  Interpretation: ${item.interpretation.join(" ")}`);
-      const ax = item.aesthetic_axes;
-      const nonZero = Object.entries(ax).filter(([, v]) => Math.abs(v) > 0.2).map(([k, v]) => `${k}=${v.toFixed(1)}`);
-      if (nonZero.length) parts.push(`  Axes: ${nonZero.join(", ")}`);
-      return parts.join("\n");
-    })
-    .join("\n\n");
+function serializeItems(items: SavedItemV4[], indices: number[]): string {
+  return indices.slice(0, 25).map(i => {
+    const item = items[i];
+    if (!item) return "";
+    const parts = [
+      `[${i}] ${item.title ?? item.domain} | ${item.item_kind} | intent=${item.save_intent.primary}`,
+      `  Summary: ${item.semantic_layer.short_summary}`,
+    ];
+    if (item.visual_layer.present && item.visual_layer.stylistic_signals.length) {
+      parts.push(`  Visual: ${item.visual_layer.stylistic_signals.join(", ")}`);
+    }
+    if (item.visual_layer.emotional_tone?.length) {
+      parts.push(`  Mood: ${item.visual_layer.emotional_tone.join(", ")}`);
+    }
+    parts.push(`  Save reason: ${item.taste_interpretation.save_reason}`);
+    parts.push(`  Weight aesthetic: ${item.taste_interpretation.weight_in_aesthetic_aggregation.toFixed(2)}`);
+    return parts.filter(Boolean).join("\n");
+  }).filter(Boolean).join("\n\n");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LLM calls
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface LlmProfileResult {
-  strong_signals: EvidencedClaim[];
-  emerging_signals: EvidencedClaim[];
-  weak_hypotheses: EvidencedClaim[];
-  visual_preferences: string[];
-  conceptual_preferences: string[];
-  emotional_preferences: string[];
-  cultural_gravity: string[];
-  preference_axes: ProfileAestheticAxes;
-  likely_dislikes: EvidencedClaim[];
-  likely_likes_more_of: string[];
-  evidence_backed_clusters: import("./types").EvidenceCluster[];
-  profile_summary_short: string;
-  profile_summary_rich: string;
-  confidence: number;
-}
-
-async function aggregateProfileWithLlm(
-  items: ItemTasteProfile[],
-  client: OpenAI
-): Promise<LlmProfileResult | null> {
-  if (items.length === 0) return null;
-  const context = buildItemsContext(items);
+async function llmJson<T>(
+  prompt: string,
+  userContent: string,
+  client: OpenAI,
+  maxTokens = 1000
+): Promise<T | null> {
   try {
     const res = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      max_tokens: 1400,
+      max_tokens: maxTokens,
       temperature: 0.15,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: PROFILE_AGGREGATION_PROMPT },
-        { role: "user", content: `${items.length} items total:\n\n${context}` },
+        { role: "system", content: prompt },
+        { role: "user", content: userContent },
       ],
     });
     const raw = res.choices[0]?.message?.content;
-    if (!raw) return null;
-    return JSON.parse(raw) as LlmProfileResult;
-  } catch {
-    return null;
-  }
-}
-
-async function extractPsychologyWithLlm(
-  items: ItemTasteProfile[],
-  client: OpenAI
-): Promise<Omit<TastePsychology, "disclaimer"> | null> {
-  if (items.length < 4) return null; // not enough signal
-  const context = buildItemsContext(items);
-  try {
-    const res = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 1200,
-      temperature: 0.15,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: TASTE_PSYCHOLOGY_PROMPT },
-        { role: "user", content: `${items.length} items total:\n\n${context}` },
-      ],
-    });
-    const raw = res.choices[0]?.message?.content;
-    if (!raw) return null;
-    return JSON.parse(raw) as Omit<TastePsychology, "disclaimer">;
-  } catch {
-    return null;
-  }
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch { return null; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Deterministic fallback
+// Deterministic fallbacks
 // ─────────────────────────────────────────────────────────────────────────────
 
-function aggregateAxes(items: ItemTasteProfile[]): ProfileAestheticAxes {
-  const src = items.filter(i => i.confidence >= 0.4);
-  const base = src.length > 0 ? src : items;
-  const avg = (key: keyof ItemTasteProfile["aesthetic_axes"]) => {
-    const vals = base.map(i => i.aesthetic_axes[key]).filter(v => v !== 0);
-    return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-  };
-  return {
-    mainstream_vs_niche: -avg("underground_vs_mainstream"),
-    loud_vs_quiet: -(avg("minimal_vs_dense") + avg("decorative_vs_structural")) / 2,
-    utility_vs_aesthetic: avg("utility_vs_atmosphere"),
-    literal_vs_interpretive: avg("editorial_vs_playful"),
-    clean_vs_textured: avg("raw_vs_polished"),
-    corporate_vs_independent: avg("underground_vs_mainstream"),
-  };
-}
-
-function buildFallbackProfile(items: ItemTasteProfile[]): LlmProfileResult {
-  // Collect weighted descriptor counts
-  const styleMap = new Map<string, { score: number; indices: number[] }>();
-  items.forEach((item, i) => {
-    for (const d of [...item.style_descriptors, ...item.mood_descriptors]) {
-      if (!d || d.length < 3) continue;
-      const e = styleMap.get(d) ?? { score: 0, indices: [] };
-      e.score += item.confidence;
-      e.indices.push(i);
-      styleMap.set(d, e);
+function countWeightedSignals(
+  items: SavedItemV4[],
+  indices: number[],
+  getSignals: (item: SavedItemV4) => string[]
+): EvidencedSignal[] {
+  const map = new Map<string, { score: number; count: number; idx: number[] }>();
+  for (const i of indices) {
+    const item = items[i];
+    if (!item) continue;
+    const weight = item.taste_interpretation.weight_in_aesthetic_aggregation;
+    for (const s of getSignals(item)) {
+      if (!s || s.length < 3) continue;
+      const e = map.get(s) ?? { score: 0, count: 0, idx: [] };
+      e.score += weight;
+      e.count++;
+      e.idx.push(i);
+      map.set(s, e);
     }
-  });
-
-  const topStyles = Array.from(styleMap.entries())
+  }
+  return Array.from(map.entries())
+    .filter(([, v]) => v.count >= 1)
     .sort((a, b) => b[1].score - a[1].score)
-    .slice(0, 8);
-
-  const strong: EvidencedClaim[] = topStyles
-    .filter(([, e]) => e.indices.length >= 3)
-    .slice(0, 3)
-    .map(([claim, e]) => ({
-      claim,
-      evidence_item_indices: e.indices.slice(0, 5),
-      coverage: e.indices.length / items.length,
-      confidence: Math.min(0.7, e.score / items.length),
+    .slice(0, 8)
+    .map(([label, v]) => ({
+      label,
+      strength: parseFloat(Math.min(1, v.score / Math.max(indices.length, 1)).toFixed(2)),
+      confidence: parseFloat(Math.min(0.8, v.score / indices.length).toFixed(2)),
+      coverage_count: v.count,
+      evidence_item_indices: v.idx,
     }));
+}
 
-  const emerging: EvidencedClaim[] = topStyles
-    .filter(([, e]) => e.indices.length === 2)
-    .slice(0, 3)
-    .map(([claim, e]) => ({
-      claim,
-      evidence_item_indices: e.indices,
-      coverage: e.indices.length / items.length,
-      confidence: 0.4,
-    }));
-
+function fallbackVisualProfile(items: SavedItemV4[], indices: number[]): VisualProfile {
+  const signals = countWeightedSignals(items, indices, i => i.visual_layer.stylistic_signals);
+  const moods = countWeightedSignals(items, indices, i => i.visual_layer.emotional_tone);
+  const avgAuth = indices.reduce((s, i) => s + (items[i]?.visual_layer.visual_authorship ?? 0), 0) / Math.max(indices.length, 1);
+  const avgOddity = indices.reduce((s, i) => s + (items[i]?.visual_layer.visual_oddity ?? 0), 0) / Math.max(indices.length, 1);
   return {
-    strong_signals: strong,
-    emerging_signals: emerging,
-    weak_hypotheses: [],
-    visual_preferences: items.flatMap(i => i.appeal_signals.visual).slice(0, 4),
-    conceptual_preferences: items.flatMap(i => i.appeal_signals.conceptual).slice(0, 4),
-    emotional_preferences: items.flatMap(i => i.appeal_signals.emotional).slice(0, 3),
+    summary_short: `Current saves suggest ${signals.slice(0, 2).map(s => s.label).join(", ") || "mixed"} visual tendencies. Heuristic fallback.`,
+    recurring_visual_signals: signals,
+    visual_preference_axes: {
+      clean_vs_textured: 0,
+      polished_vs_raw: -(avgAuth - 0.5),
+      commercial_vs_authored: avgAuth,
+      literal_vs_symbolic: 0,
+      mainstream_vs_subcultural: avgOddity,
+      decorative_vs_structural: 0,
+    },
+    repeated_moods: moods.slice(0, 4).map(m => m.label),
+    likely_visual_likes_more_of: [],
+    confidence: 0.35,
+    vector_ready_text: `Visual signals: ${signals.slice(0, 4).map(s => s.label).join(", ")}`,
+  };
+}
+
+function fallbackCulturalProfile(items: SavedItemV4[], indices: number[]): CulturalProfile {
+  const patterns = countWeightedSignals(items, indices, i => [
+    ...(i.visual_layer.cultural_signal ?? []),
+    ...(i.visual_layer.stylistic_signals ?? []).slice(0, 2),
+  ]);
+  return {
+    summary_short: "Current saves suggest selective cultural interest. Heuristic fallback.",
+    core_attraction: patterns.slice(0, 3).map(p => p.label),
+    recurring_patterns: patterns.slice(0, 5),
     cultural_gravity: [],
-    preference_axes: aggregateAxes(items),
-    likely_dislikes: [],
     likely_likes_more_of: [],
-    evidence_backed_clusters: [],
-    profile_summary_short: items.length === 0
-      ? "No items saved yet."
-      : `Current saves suggest interest in ${strong.map(s => s.claim).join(", ") || "mixed content"}. Insufficient data for reliable profiling.`,
-    profile_summary_rich: `Save collection contains ${items.length} items across ${new Set(items.map(i => i.domain)).size} domains. Heuristic fallback — LLM key not configured.`,
-    confidence: items.reduce((s, i) => s + i.confidence, 0) / Math.max(items.length, 1),
+    likely_dislikes: [],
+    confidence: 0.3,
+    vector_ready_text: `Cultural signals: ${patterns.slice(0, 3).map(p => p.label).join(", ")}`,
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Visual taste aggregation
-// ─────────────────────────────────────────────────────────────────────────────
+function fallbackUtilityProfile(items: SavedItemV4[], indices: number[]): UtilityProfile {
+  const domains = Array.from(new Set(indices.map(i => items[i]?.domain).filter((d): d is string => Boolean(d))));
+  return {
+    summary_short: `${indices.length} utility/tool saves detected. Should not affect aesthetic profile.`,
+    tooling_interests: countWeightedSignals(items, indices, i => [i.item_kind]).slice(0, 4),
+    workflow_preferences: [`Tool saves from: ${domains.slice(0, 4).join(", ")}`],
+    should_not_contaminate_visual_profile: true,
+    confidence: 0.5,
+    vector_ready_text: `Utility profile: ${indices.length} items. Not to be included in aesthetic aggregation.`,
+  };
+}
 
-function aggregateVisualTaste(
-  items: ItemTasteProfile[]
-): VisualTasteSummary | null {
-  const visualItems = items
-    .map((item, idx) => ({ item, idx }))
-    .filter(({ item }) => item.visual_analysis !== null && (item.visual_analysis?.confidence ?? 0) >= 0.3);
-
-  if (visualItems.length < 2) return null;
-
-  const coverage = visualItems.length / items.length;
-
-  // Count stylistic signals weighted by confidence
-  const signalMap = new Map<string, { count: number; score: number; indices: number[] }>();
-  const moodMap = new Map<string, { count: number; indices: number[] }>();
-  const colorMap = new Map<string, number>();
-  const authorshipCounts = new Map<string, number>();
-
-  for (const { item, idx } of visualItems) {
-    const v = item.visual_analysis as VisualAnalysisProfile;
-    const conf = v.confidence;
-
-    for (const signal of v.stylistic_signals) {
-      const e = signalMap.get(signal) ?? { count: 0, score: 0, indices: [] };
-      e.count++;
-      e.score += conf;
-      e.indices.push(idx);
-      signalMap.set(signal, e);
-    }
-    for (const mood of v.emotional_tone) {
-      const e = moodMap.get(mood) ?? { count: 0, indices: [] };
-      e.count++;
-      e.indices.push(idx);
-      moodMap.set(mood, e);
-    }
-    for (const hue of v.color_profile.dominant_hues) {
-      colorMap.set(hue, (colorMap.get(hue) ?? 0) + 1);
-    }
-    authorshipCounts.set(v.authorship_signal, (authorshipCounts.get(v.authorship_signal) ?? 0) + 1);
+function buildSaveBehavior(items: SavedItemV4[]): SaveBehaviorProfile {
+  const intentCounts = new Map<SaveIntent, number>();
+  for (const item of items) {
+    const p = item.save_intent.primary;
+    intentCounts.set(p, (intentCounts.get(p) ?? 0) + 1);
   }
 
-  // Top recurring signals
-  const recurringSignals = Array.from(signalMap.entries())
-    .sort((a, b) => b[1].score - a[1].score)
-    .slice(0, 10)
-    .map(([signal, e]) => ({
-      signal,
-      count: e.count,
-      item_indices: e.indices,
-    }));
+  const visualItems = items.filter(i => i.profile_routing.affects_visual_profile).length;
+  const utilityItems = items.filter(i => i.profile_routing.affects_utility_profile).length;
+  const tasteItems = items.filter(i => i.taste_interpretation.should_affect_aesthetic_profile).length;
+  const total = Math.max(items.length, 1);
 
-  // Top moods
-  const repeatedMoods = Array.from(moodMap.entries())
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 5)
-    .map(([mood]) => mood);
+  const avgAuthored = items.reduce((s, i) => s + i.visual_layer.visual_authorship, 0) / total;
+  const avgOddity = items.reduce((s, i) => s + i.visual_layer.visual_oddity, 0) / total;
 
-  // Top color tendencies
-  const dominantColors = Array.from(colorMap.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([hue]) => hue);
-
-  // Authorship tendency
-  const topAuthorship = Array.from(authorshipCounts.entries())
-    .sort((a, b) => b[1] - a[1])[0]?.[0] ?? "neutral";
-  const authoredCount = (authorshipCounts.get("strongly authored") ?? 0) + (authorshipCounts.get("authored") ?? 0);
-  const genericCount = (authorshipCounts.get("template-like") ?? 0) + (authorshipCounts.get("algorithmic") ?? 0);
-  const authorshipTendency = authoredCount > genericCount * 1.5
-    ? "strong preference for authored/non-template visuals"
-    : genericCount > authoredCount * 1.5
-      ? "tendency toward template/generic visuals"
-      : `mixed authorship tendency (top: ${topAuthorship})`;
-
-  // Visual preference axes from aesthetic_axes aggregation
-  const avgAxis = (key: keyof ItemTasteProfile["aesthetic_axes"]) => {
-    const vals = visualItems.map(({ item }) => item.aesthetic_axes[key]).filter(v => v !== 0);
-    return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-  };
-  const visualAxes = {
-    raw_vs_refined: avgAxis("raw_vs_polished"),
-    sparse_vs_dense: avgAxis("minimal_vs_dense"),
-    warm_vs_cool: avgAxis("warm_vs_cold"),
-    analog_vs_digital: avgAxis("analog_vs_digital"),
-    authored_vs_generic: authoredCount > 0 ? (authoredCount - genericCount) / Math.max(authoredCount + genericCount, 1) : 0,
-    dark_vs_bright: 0, // not tracked in item axes, neutral
+  const selectionStyle: SelectionStyle = {
+    collects_for_visual_reference: parseFloat((visualItems / total).toFixed(2)),
+    collects_for_cultural_signal: parseFloat(((intentCounts.get("cultural_signal") ?? 0) / total).toFixed(2)),
+    collects_for_future_use: parseFloat(((utilityItems) / total).toFixed(2)),
+    collects_for_identity_expression: parseFloat(((intentCounts.get("identity_signal") ?? 0) / total).toFixed(2)),
+    collects_for_practical_implementation: parseFloat(((intentCounts.get("workflow_resource") ?? 0) / total).toFixed(2)),
+    collects_rare_over_popular: parseFloat(Math.min(1, avgOddity * 1.2).toFixed(2)),
+    collects_authored_over_generic: parseFloat(Math.min(1, avgAuthored * 1.1).toFixed(2)),
   };
 
-  // Taste-based visual clusters from top signal combinations
-  const clusters: VisualTasteCluster[] = [];
-  const topSignals = recurringSignals.slice(0, 6);
-  if (topSignals.length >= 2) {
-    // Group by items that share 2+ signals
-    const itemSignalSets = new Map<number, string[]>();
-    for (const { signal, item_indices } of topSignals) {
-      for (const idx of item_indices) {
-        const s = itemSignalSets.get(idx) ?? [];
-        s.push(signal);
-        itemSignalSets.set(idx, s);
-      }
-    }
-    // Find dense signal combinations
-    const signalPairMap = new Map<string, { signals: string[]; indices: number[] }>();
-    for (const [idx, signals] of Array.from(itemSignalSets.entries())) {
-      if (signals.length >= 2) {
-        const key = signals.slice(0, 2).sort().join("+");
-        const e = signalPairMap.get(key) ?? { signals: signals.slice(0, 2), indices: [] };
-        e.indices.push(idx);
-        signalPairMap.set(key, e);
-      }
-    }
-    for (const [, { signals, indices }] of Array.from(signalPairMap.entries())) {
-      if (indices.length >= 2) {
-        clusters.push({
-          label: signals.join(" / "),
-          description: `Visual cluster: repeated co-occurrence of ${signals.join(" and ")} across ${indices.length} items`,
-          stylistic_signals: signals,
-          evidence_item_indices: indices,
-          strength: indices.length / visualItems.length,
-        });
-      }
-    }
-  }
-
-  const avgConf = visualItems.reduce((s, { item }) => s + (item.visual_analysis?.confidence ?? 0), 0) / visualItems.length;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _topIntents = Array.from(intentCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([i]) => i);
+  const tasteRatio = tasteItems / total;
+  const utilityRatio = utilityItems / total;
 
   return {
-    recurring_visual_signals: recurringSignals,
-    visual_preference_axes: visualAxes,
-    repeated_moods: repeatedMoods,
-    dominant_color_tendencies: dominantColors,
-    authorship_tendency: authorshipTendency,
-    visual_taste_clusters: clusters.sort((a, b) => b.strength - a.strength).slice(0, 5),
-    visual_coverage: coverage,
-    confidence: avgConf,
+    summary_short: `${items.length} saves: ${(tasteRatio * 100).toFixed(0)}% taste-driven, ${(utilityRatio * 100).toFixed(0)}% utility. Mixed curation pattern.`,
+    selection_style: selectionStyle,
+    save_intent_distribution: Array.from(intentCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([intent, count]) => ({ intent, count })),
+    behavioral_notes: [
+      tasteRatio > 0.6 ? "Predominantly taste-driven curation." : "Mixed practical and taste curation.",
+      utilityRatio > 0.3 ? "Significant utility saves — must be routed away from aesthetic profile." : "Low utility contamination risk.",
+    ],
+    confidence: 0.65,
+  };
+}
+
+function fallbackPsychology(items: SavedItemV4[]): Omit<TastePsychologyV4, "guardrails"> | null {
+  if (items.length < 4) return null;
+  const visualItems = items.filter(i => i.profile_routing.affects_visual_profile);
+  const avgOddity = visualItems.reduce((s, i) => s + i.visual_layer.visual_oddity, 0) / Math.max(visualItems.length, 1);
+  const avgAuth = visualItems.reduce((s, i) => s + i.visual_layer.visual_authorship, 0) / Math.max(visualItems.length, 1);
+  const visualIndices = visualItems.map(i => i.item_index);
+
+  const traits: TraitHypothesis[] = [
+    { trait: "openness_to_experience", label: "Openness to Experience",
+      estimated_level: parseFloat(Math.min(0.9, avgOddity + 0.1).toFixed(2)), confidence: 0.45,
+      evidence: ["Repeated saves from non-mainstream sources"], coverage_item_indices: visualIndices.slice(0, 4) },
+    { trait: "aesthetic_engagement", label: "Aesthetic Engagement",
+      estimated_level: parseFloat(Math.min(0.9, (avgAuth + visualItems.length / items.length) / 2).toFixed(2)), confidence: 0.5,
+      evidence: ["Significant fraction of saves appear visually driven"], coverage_item_indices: visualIndices.slice(0, 4) },
+    { trait: "independence_of_taste", label: "Independence of Taste",
+      estimated_level: parseFloat(Math.min(0.85, avgOddity).toFixed(2)), confidence: 0.4,
+      evidence: ["Pull toward non-generic sources observed"], coverage_item_indices: visualIndices.slice(0, 3) },
+  ];
+
+  const personas: PersonaBlendEntry[] = [];
+  if (avgOddity > 0.5) personas.push({ persona: "niche_internet_curator", weight: parseFloat(Math.min(0.9, avgOddity + 0.1).toFixed(2)), description: "Pulls toward non-generic, signal-rich references." });
+  if (avgAuth > 0.5) personas.push({ persona: "authored_visual_selector", weight: parseFloat(Math.min(0.85, avgAuth).toFixed(2)), description: "Responds to visual authorship over template imagery." });
+  const utilityRatio = items.filter(i => i.profile_routing.affects_utility_profile).length / items.length;
+  if (utilityRatio > 0.2) personas.push({ persona: "tool_aware_researcher", weight: parseFloat(utilityRatio.toFixed(2)), description: "Also saves practical resources, not the core taste signal." });
+
+  return {
+    trait_hypotheses: traits,
+    persona_blend: personas,
+    confidence: 0.4,
+    vector_ready_text: `Heuristic psychology: ${traits.map(t => `${t.label}=${t.estimated_level}`).join(", ")}`,
   };
 }
 
@@ -463,79 +359,99 @@ function aggregateVisualTaste(
 
 export async function buildMasterProfile(
   userSlug: string,
-  profiles: ItemTasteProfile[],
+  profiles: SavedItemV4[],
   linkIds: string[],
   apiKey?: string | null
 ): Promise<AiMasterProfile> {
   const key = apiKey ?? process.env.OPENAI_API_KEY;
-  let profileResult: LlmProfileResult | null = null;
-  let psychologyResult: Omit<TastePsychology, "disclaimer"> | null = null;
+
+  // Route items into separate buckets
+  const visualIndices = profiles.map((p, i) => ({ p, i })).filter(({ p }) => p.profile_routing.affects_visual_profile).map(({ i }) => i);
+  const culturalIndices = profiles.map((p, i) => ({ p, i })).filter(({ p }) => p.profile_routing.affects_cultural_profile).map(({ i }) => i);
+  const utilityIndices = profiles.map((p, i) => ({ p, i })).filter(({ p }) => p.profile_routing.affects_utility_profile).map(({ i }) => i);
+
+  let visualProfile: VisualProfile | null = null;
+  let culturalProfile: CulturalProfile | null = null;
+  let utilityProfile: UtilityProfile | null = null;
+  let psychology: Omit<TastePsychologyV4, "guardrails"> | null = null;
+  let masterSummary: MasterSummary | null = null;
 
   if (key && profiles.length > 0) {
     const client = new OpenAI({ apiKey: key });
-    // Run both in parallel — psychology is independent
-    [profileResult, psychologyResult] = await Promise.all([
-      aggregateProfileWithLlm(profiles, client),
-      extractPsychologyWithLlm(profiles, client),
-    ]);
+
+    // Run visual, cultural, utility, psychology in parallel; master summary separately after
+    const vpRaw = visualIndices.length >= 1
+      ? await llmJson<VisualProfile>(VISUAL_PROFILE_PROMPT, `${visualIndices.length} visual items:\n\n${serializeItems(profiles, visualIndices)}`, client, 900)
+      : null;
+    const cpRaw = culturalIndices.length >= 1
+      ? await llmJson<CulturalProfile>(CULTURAL_PROFILE_PROMPT, `${culturalIndices.length} cultural items:\n\n${serializeItems(profiles, culturalIndices)}`, client, 700)
+      : null;
+    const upRaw = utilityIndices.length >= 1
+      ? await llmJson<Omit<UtilityProfile, "should_not_contaminate_visual_profile">>(UTILITY_PROFILE_PROMPT, `${utilityIndices.length} utility items:\n\n${serializeItems(profiles, utilityIndices)}`, client, 500)
+      : null;
+    const psRaw = profiles.length >= 4
+      ? await llmJson<Omit<TastePsychologyV4, "guardrails">>(PSYCHOLOGY_PROMPT, `${profiles.length} items total:\n\n${serializeItems(profiles, profiles.map((_, i) => i))}`, client, 1000)
+      : null;
+
+    visualProfile = vpRaw ?? (visualIndices.length ? fallbackVisualProfile(profiles, visualIndices) : null);
+    culturalProfile = cpRaw ?? (culturalIndices.length ? fallbackCulturalProfile(profiles, culturalIndices) : null);
+    utilityProfile = upRaw ? { ...upRaw, should_not_contaminate_visual_profile: true as const } : (utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null);
+    psychology = psRaw ?? fallbackPsychology(profiles);
+
+    const msRaw = profiles.length > 0
+      ? await llmJson<MasterSummary>(MASTER_SUMMARY_PROMPT, [
+          visualProfile ? `Visual: ${visualProfile.summary_short}` : "",
+          culturalProfile ? `Cultural: ${culturalProfile.summary_short}` : "",
+          `${profiles.length} total saves, ${visualIndices.length} visual-routed, ${utilityIndices.length} utility-routed`,
+        ].filter(Boolean).join("\n"), client, 400)
+      : null;
+    masterSummary = msRaw ?? null;
+  } else {
+    visualProfile = visualIndices.length ? fallbackVisualProfile(profiles, visualIndices) : null;
+    culturalProfile = culturalIndices.length ? fallbackCulturalProfile(profiles, culturalIndices) : null;
+    utilityProfile = utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null;
+    psychology = fallbackPsychology(profiles);
   }
 
-  if (!profileResult) {
-    profileResult = buildFallbackProfile(profiles);
+  const saveBehavior = buildSaveBehavior(profiles);
+
+  if (!masterSummary) {
+    masterSummary = {
+      profile_summary_short: visualProfile?.summary_short ?? `Current saves contain ${profiles.length} items across ${new Set(profiles.map(p => p.domain)).size} domains.`,
+      profile_summary_rich: [
+        visualProfile?.summary_short ?? "",
+        culturalProfile?.summary_short ?? "",
+        `${utilityIndices.length} utility saves should not affect aesthetic inference.`,
+      ].filter(Boolean).join(" "),
+      confidence: 0.5,
+      vector_ready_text: [
+        visualProfile?.vector_ready_text ?? "",
+        culturalProfile?.vector_ready_text ?? "",
+      ].filter(Boolean).join("; "),
+    };
   }
 
-  // Visual aggregation is deterministic — no LLM needed
-  const visualTasteSummary = aggregateVisualTaste(profiles);
-
-  const tasteSummary: import("./types").TasteProfileSummary = {
-    strong_signals: profileResult.strong_signals ?? [],
-    emerging_signals: profileResult.emerging_signals ?? [],
-    weak_hypotheses: profileResult.weak_hypotheses ?? [],
-    visual_preferences: profileResult.visual_preferences ?? [],
-    conceptual_preferences: profileResult.conceptual_preferences ?? [],
-    emotional_preferences: profileResult.emotional_preferences ?? [],
-    cultural_gravity: profileResult.cultural_gravity ?? [],
-    preference_axes: profileResult.preference_axes,
-    likely_dislikes: profileResult.likely_dislikes ?? [],
-    likely_likes_more_of: profileResult.likely_likes_more_of ?? [],
-    evidence_backed_clusters: profileResult.evidence_backed_clusters ?? [],
-    profile_summary_short: profileResult.profile_summary_short,
-    profile_summary_rich: profileResult.profile_summary_rich,
-    confidence: Math.max(0, Math.min(1, profileResult.confidence)),
-    vector_ready_text: [
-      `TASTE PROFILE: ${userSlug}`,
-      profileResult.profile_summary_short,
-      profileResult.strong_signals?.map(s => `STRONG: ${s.claim}`).join("\n") ?? "",
-      profileResult.visual_preferences?.length ? `VISUAL: ${profileResult.visual_preferences.join("; ")}` : "",
-      profileResult.conceptual_preferences?.length ? `CONCEPTUAL: ${profileResult.conceptual_preferences.join("; ")}` : "",
-      profileResult.likely_dislikes?.length ? `AVOIDS: ${profileResult.likely_dislikes.map(d => d.claim).join("; ")}` : "",
-    ].filter(Boolean).join("\n"),
-  };
-
-  const tastePsychology: TastePsychology | null = psychologyResult
-    ? {
-        disclaimer: "This section contains probabilistic inferences from saved links only. It is non-clinical, non-diagnostic, and explicitly uncertain. Do not treat any claim here as fact.",
-        ...psychologyResult,
-      }
+  const tastePsychology: TastePsychologyV4 | null = psychology
+    ? { guardrails: { non_clinical: true, non_diagnostic: true, inference_only_from_saved_links: true, explicitly_uncertain: true }, ...psychology }
     : null;
 
   const domains = new Set(profiles.map(p => p.domain));
 
-  // AiMasterProfile shape for backward compat — also carry new fields
+  // Return in AiMasterProfile shape for export-payload backward compat
   return {
     schema_version: 1,
     user_slug: userSlug,
     generated_at: new Date().toISOString(),
-    taste_summary_paragraph: profileResult.profile_summary_short,
-    top_themes: profileResult.strong_signals.map((s, i) => ({ label: s.claim, weight: profileResult!.strong_signals.length - i })),
-    top_aesthetics: profileResult.visual_preferences.map((label, i) => ({ label, weight: profileResult!.visual_preferences.length - i })),
+    taste_summary_paragraph: masterSummary.profile_summary_short,
+    top_themes: (visualProfile?.recurring_visual_signals ?? []).slice(0, 6).map((s, i) => ({ label: s.label, weight: 6 - i })),
+    top_aesthetics: (visualProfile?.recurring_visual_signals ?? []).slice(0, 6).map((s, i) => ({ label: s.label, weight: 6 - i })),
     content_type_breakdown: Object.fromEntries(
-      Array.from(new Set(profiles.map(p => p.content_type))).map(k => [k, profiles.filter(p => p.content_type === k).length])
+      Array.from(new Set(profiles.map(p => p.item_kind))).map(k => [k, profiles.filter(p => p.item_kind === k).length])
     ),
-    clusters: (profileResult.evidence_backed_clusters ?? []).map(c => ({
-      id: c.label.replace(/\s+/g, "_"),
-      label: c.label,
-      link_ids: c.evidence_item_indices.map(i => linkIds[i]).filter(Boolean),
+    clusters: (visualProfile?.recurring_visual_signals ?? []).slice(0, 4).map(s => ({
+      id: s.label.replace(/\s+/g, "_"),
+      label: s.label,
+      link_ids: s.evidence_item_indices.map(i => linkIds[i]).filter(Boolean),
     })),
     representative_link_ids: linkIds.slice(0, 5),
     aggregate_stats: {
@@ -545,14 +461,14 @@ export async function buildMasterProfile(
         Array.from(new Set(profiles.map(p => p.source_kind))).map(k => [k, profiles.filter(p => p.source_kind === k).length])
       ),
     },
-    semantic_overview: [
-      profileResult.strong_signals?.length ? `Strong: ${profileResult.strong_signals.map(s => s.claim).join("; ")}` : "",
-      profileResult.visual_preferences?.length ? `Visual: ${profileResult.visual_preferences.join("; ")}` : "",
-      profileResult.likely_dislikes?.length ? `Avoids: ${profileResult.likely_dislikes.map(d => d.claim).join("; ")}` : "",
-    ].filter(Boolean).join("\n"),
-    saved_items: profiles as AiMasterProfile["saved_items"],
-    // Carry new structures for export-payload
-    ...(({ taste_summary: tasteSummary, taste_psychology: tastePsychology, visual_taste_summary: visualTasteSummary } as object)),
+    semantic_overview: masterSummary.vector_ready_text,
+    saved_items: profiles,
+    visual_profile: visualProfile,
+    cultural_profile: culturalProfile,
+    utility_profile: utilityProfile,
+    save_behavior_profile: saveBehavior,
+    taste_psychology: tastePsychology,
+    master_summary: masterSummary,
   } as AiMasterProfile;
 }
 
@@ -565,131 +481,69 @@ export function masterProfileToMarkdown(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _linkIds: string[]
 ): string {
-  const ts = (m as unknown as { taste_summary?: import("./types").TasteProfileSummary }).taste_summary;
-  const tp = (m as unknown as { taste_psychology?: TastePsychology | null }).taste_psychology;
-  const vt = (m as unknown as { visual_taste_summary?: VisualTasteSummary | null }).visual_taste_summary;
+  const ms = m.master_summary;
+  const vp = m.visual_profile;
+  const cp = m.cultural_profile;
+  const up = m.utility_profile;
+  const sb = m.save_behavior_profile;
+  const tp = m.taste_psychology;
 
-  const lines: string[] = [
-    `# Taste dossier — ${m.user_slug}`,
+  const lines = [
+    `# Taste Dossier v4 — ${m.user_slug}`,
     `_Generated: ${m.generated_at} | Items: ${m.aggregate_stats.total_items}_`,
     ``,
   ];
 
-  if (ts?.profile_summary_rich) {
-    lines.push(`## Summary`, ``, ts.profile_summary_rich, ``);
+  if (ms) {
+    lines.push(`## Master Summary`, ``, ms.profile_summary_rich, `_Confidence: ${ms.confidence.toFixed(2)}_`, ``);
   }
 
-  if (ts?.strong_signals?.length) {
-    lines.push(`## Strong signals (multi-item backed)`);
-    for (const s of ts.strong_signals) {
-      lines.push(`- **${s.claim}** — coverage ${(s.coverage * 100).toFixed(0)}%, conf ${s.confidence.toFixed(2)}, items [${s.evidence_item_indices.join(",")}]`);
+  if (vp) {
+    lines.push(`## Visual Profile`, ``, vp.summary_short, ``);
+    if (vp.recurring_visual_signals.length) {
+      lines.push(`### Recurring visual signals`);
+      for (const s of vp.recurring_visual_signals) {
+        lines.push(`- **${s.label}** — strength ${s.strength.toFixed(2)}, conf ${s.confidence.toFixed(2)}, ${s.coverage_count} items [${s.evidence_item_indices.join(",")}]`);
+      }
     }
-    lines.push(``);
-  }
-
-  if (ts?.emerging_signals?.length) {
-    lines.push(`## Emerging signals`);
-    for (const s of ts.emerging_signals) {
-      lines.push(`- ${s.claim} — conf ${s.confidence.toFixed(2)}, items [${s.evidence_item_indices.join(",")}]`);
+    if (vp.repeated_moods.length) lines.push(``, `**Moods:** ${vp.repeated_moods.join(", ")}`);
+    if (vp.likely_visual_likes_more_of.length) {
+      lines.push(``, `**Would like more of:**`);
+      vp.likely_visual_likes_more_of.forEach(s => lines.push(`- ${s}`));
     }
-    lines.push(``);
+    lines.push(``, `_Visual confidence: ${vp.confidence.toFixed(2)}_`, ``);
   }
 
-  if (ts?.weak_hypotheses?.length) {
-    lines.push(`## Weak hypotheses (speculative)`);
-    for (const s of ts.weak_hypotheses) {
-      lines.push(`- _${s.claim}_ — conf ${s.confidence.toFixed(2)}, items [${s.evidence_item_indices.join(",")}]`);
-    }
-    lines.push(``);
+  if (cp) {
+    lines.push(`## Cultural Profile`, ``, cp.summary_short, ``);
+    if (cp.core_attraction.length) lines.push(`**Core attraction:** ${cp.core_attraction.join(", ")}`, ``);
+    if (cp.likely_dislikes.length) lines.push(`**Evidence-backed dislikes:** ${cp.likely_dislikes.join(", ")}`, ``);
   }
 
-  if (ts?.visual_preferences?.length) {
-    lines.push(`## Visual preferences`, ...ts.visual_preferences.map(s => `- ${s}`), ``);
+  if (up) {
+    lines.push(`## Utility Profile`, ``, up.summary_short, ``);
+    lines.push(`> ⚠️ These saves should NOT affect visual/aesthetic profile inference.`, ``);
   }
 
-  if (ts?.likely_dislikes?.length) {
-    lines.push(`## Evidence-backed dislikes`);
-    for (const d of ts.likely_dislikes) {
-      lines.push(`- ${d.claim} — conf ${d.confidence.toFixed(2)}, items [${d.evidence_item_indices.join(",")}]`);
-    }
-    lines.push(``);
-  }
-
-  if (ts?.likely_likes_more_of?.length) {
-    lines.push(`## Would likely save more of`, ...ts.likely_likes_more_of.map(s => `- ${s}`), ``);
-  }
-
-  if (ts?.evidence_backed_clusters?.length) {
-    lines.push(`## Taste clusters`);
-    for (const c of ts.evidence_backed_clusters) {
-      lines.push(`- **${c.label}** (${(c.strength * 100).toFixed(0)}%) — ${c.description} [${c.evidence_item_indices.join(",")}]`);
-    }
-    lines.push(``);
+  if (sb) {
+    lines.push(`## Save Behavior`, ``, sb.summary_short, ``);
+    const top = sb.save_intent_distribution.slice(0, 4);
+    lines.push(`**Intent distribution:** ${top.map(e => `${e.intent}(${e.count})`).join(", ")}`, ``);
   }
 
   if (tp) {
-    lines.push(
-      `## Taste psychology`,
-      ``,
-      `> ⚠️ ${tp.disclaimer}`,
-      ``,
-    );
-    const th = tp.trait_hypotheses;
-    lines.push(`### Trait hypotheses`);
-    for (const [, dim] of Object.entries(th)) {
-      lines.push(`- **${dim.label}**: ${dim.estimated_level} (conf ${dim.confidence.toFixed(2)}) — ${dim.evidence.join("; ")}`);
+    lines.push(`## Taste Psychology`, ``, `> ⚠️ Non-clinical, non-diagnostic, inference only. Explicitly uncertain.`, ``);
+    for (const t of tp.trait_hypotheses) {
+      lines.push(`- **${t.label}**: ${t.estimated_level.toFixed(2)} (conf ${t.confidence.toFixed(2)}) — ${t.evidence.join("; ")}`);
     }
     lines.push(``);
-    if (tp.persona_blend?.length) {
-      lines.push(`### Persona blend`);
-      for (const p of tp.persona_blend) {
-        lines.push(`- **${p.archetype}** (${(p.weight * 100).toFixed(0)}%) — ${p.rationale}`);
-      }
+    if (tp.persona_blend.length) {
+      lines.push(`**Persona blend:**`);
+      tp.persona_blend.forEach(p => lines.push(`- ${p.persona} (${(p.weight * 100).toFixed(0)}%) — ${p.description}`));
       lines.push(``);
-    }
-    if (tp.synthesis) {
-      lines.push(`### Synthesis`, ``, tp.synthesis, ``);
     }
   }
 
-  if (vt && vt.recurring_visual_signals.length > 0) {
-    lines.push(
-      `## Visual taste language`,
-      ``,
-      `_Coverage: ${(vt.visual_coverage * 100).toFixed(0)}% of items analyzed | Confidence: ${vt.confidence.toFixed(2)}_`,
-      ``,
-    );
-    lines.push(`### Recurring visual signals`);
-    for (const s of vt.recurring_visual_signals.slice(0, 8)) {
-      lines.push(`- **${s.signal}** (${s.count}× across items [${s.item_indices.join(",")}])`);
-    }
-    lines.push(``);
-    if (vt.repeated_moods.length) {
-      lines.push(`### Repeated visual moods`, ...vt.repeated_moods.map(m => `- ${m}`), ``);
-    }
-    if (vt.dominant_color_tendencies.length) {
-      lines.push(`### Dominant color tendencies`, ...vt.dominant_color_tendencies.map(c => `- ${c}`), ``);
-    }
-    lines.push(`### Authorship tendency`, ``, vt.authorship_tendency, ``);
-    if (vt.visual_taste_clusters.length) {
-      lines.push(`### Visual clusters`);
-      for (const c of vt.visual_taste_clusters) {
-        lines.push(`- **${c.label}** (${(c.strength * 100).toFixed(0)}%) — ${c.description} [${c.evidence_item_indices.join(",")}]`);
-      }
-      lines.push(``);
-    }
-    lines.push(`### Visual preference axes`);
-    const axes = vt.visual_preference_axes;
-    lines.push(
-      `- raw_vs_refined: ${axes.raw_vs_refined.toFixed(2)}`,
-      `- authored_vs_generic: ${axes.authored_vs_generic.toFixed(2)}`,
-      `- sparse_vs_dense: ${axes.sparse_vs_dense.toFixed(2)}`,
-      `- warm_vs_cool: ${axes.warm_vs_cool.toFixed(2)}`,
-      `- analog_vs_digital: ${axes.analog_vs_digital.toFixed(2)}`,
-      ``,
-    );
-  }
-
-  lines.push(`---`, `_See JSON export for full machine-readable item profiles with vector_ready_text._`);
+  lines.push(`---`, `_See JSON export for full v4 dossier with all item-level layers._`);
   return lines.join("\n");
 }

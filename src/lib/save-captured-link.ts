@@ -1,8 +1,7 @@
 import type { Link } from "@prisma/client";
 import { buildLinkAiProfileAsync } from "@/lib/ai-taste/build-link-profile";
 import { extractMainTextFromUrl } from "@/lib/ai-taste/extract-main-text";
-import { analyzeImageStructured, analyzeImageForTaste, summarizeTranscript } from "@/lib/ai-taste/analyze-image";
-import type { VisualAnalysisProfile } from "@/lib/ai-taste/types";
+import { analyzeImageStructured, analyzeImageForTaste, summarizeTranscript, type RawVisualAnalysis } from "@/lib/ai-taste/analyze-image";
 import { fetchYouTubeTranscript } from "@/lib/ai-taste/fetch-youtube-transcript";
 import { prisma } from "@/lib/prisma";
 import { resolvePreview } from "@/lib/preview-resolver";
@@ -142,7 +141,7 @@ export async function saveCapturedLinkForUser(
 
   // Visual analysis — structured for images, transcript summary for video
   let visionDescription: string | null = null;
-  let visualProfile: VisualAnalysisProfile | null = null;
+  let visualProfile: RawVisualAnalysis | null = null;
 
   if (preview.imageUrl) {
     if (preview.provider === "youtube" && extractedText) {
