@@ -2,13 +2,44 @@
  * Full taste dossier rebuild for one user: clears cached per-link aiProfileJson, re-runs item + master pipeline.
  *
  * Usage: npx tsx scripts/rebuild-taste-dossier.ts <slug>
- * Requires DATABASE_URL and OPENAI_API_KEY or user openaiApiKey in DB.
+ * Loads `.env` from repo root (so Prisma sees DATABASE_URL even when the shell does not).
  */
 
-import { buildTasteExportForSlug } from "../src/lib/ai-taste/export-payload";
-import { prisma } from "../src/lib/prisma";
+import fs from "node:fs";
+import path from "node:path";
+
+function loadDotEnvFromRepoRoot(): void {
+  const p = path.resolve(process.cwd(), ".env");
+  if (!fs.existsSync(p)) return;
+  const raw = fs.readFileSync(p, "utf8");
+  for (const line of raw.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const i = t.indexOf("=");
+    if (i < 1) continue;
+    const key = t.slice(0, i).trim();
+    let val = t.slice(i + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    process.env[key] = val;
+  }
+}
+
+loadDotEnvFromRepoRoot();
 
 async function main() {
+  const { buildTasteExportForSlug } = await import("../src/lib/ai-taste/export-payload");
+  const { prisma } = await import("../src/lib/prisma");
+
+  const db = process.env.DATABASE_URL ?? "";
+  if (!/^postgres(ql)?:\/\//i.test(db)) {
+    console.error(
+      "DATABASE_URL must start with postgresql:// or postgres:// (save .env on disk, not only in editor buffer).",
+    );
+    process.exit(1);
+  }
+
   const slug = process.argv[2]?.trim();
   if (!slug) {
     const users = await prisma.user.findMany({
@@ -49,11 +80,11 @@ async function main() {
     masterConfidence: built.master.master_summary?.confidence ?? null,
     psychTraits: built.master.taste_psychology?.trait_hypotheses?.length ?? 0,
   });
+
+  await prisma.$disconnect();
 }
 
-main()
-  .catch(e => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+main().catch(e => {
+  console.error(e);
+  process.exit(1);
+});
