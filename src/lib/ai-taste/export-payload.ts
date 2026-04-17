@@ -28,11 +28,14 @@ function parseStoredProfile(json: string | null): SavedItemV4 | null {
 async function buildItem(
   link: Link,
   index: number,
-  apiKey?: string | null
+  apiKey?: string | null,
+  skipCache?: boolean
 ): Promise<SavedItemV4> {
   // Try cached v4 profile
-  const cached = parseStoredProfile(link.aiProfileJson);
-  if (cached) return { ...cached, item_index: index };
+  if (!skipCache) {
+    const cached = parseStoredProfile(link.aiProfileJson);
+    if (cached) return { ...cached, item_index: index };
+  }
 
   const oEmbed = link.oEmbedJson ? (() => { try { return JSON.parse(link.oEmbedJson!) as Record<string, unknown>; } catch { return null; } })() : null;
 
@@ -95,12 +98,25 @@ export type TasteExportJson = TasteDossierV4 & {
 // Main export builder
 // ─────────────────────────────────────────────────────────────────────────────
 
+export type BuildTasteExportOptions = {
+  /** When true, clears per-link aiProfileJson for this user then rebuilds every item + master */
+  invalidateCachedItemProfiles?: boolean;
+};
+
 export async function buildTasteExportForSlug(
   slug: string,
-  apiKey?: string | null
+  apiKey?: string | null,
+  options?: BuildTasteExportOptions
 ): Promise<{ json: TasteExportJson; master: AiMasterProfile; collections: Collection[] } | null> {
   const user = await prisma.user.findUnique({ where: { slug } });
   if (!user) return null;
+
+  if (options?.invalidateCachedItemProfiles) {
+    await prisma.link.updateMany({
+      where: { userId: user.id },
+      data: { aiProfileJson: null },
+    });
+  }
 
   // Resolve API key from user record if not passed
   let resolvedKey = apiKey ?? null;
@@ -124,9 +140,10 @@ export async function buildTasteExportForSlug(
 
   const profiles: SavedItemV4[] = [];
   const linkIds: string[] = [];
+  const skipCache = Boolean(options?.invalidateCachedItemProfiles);
   for (let i = 0; i < links.length; i++) {
     linkIds.push(links[i].id);
-    profiles.push(await buildItem(links[i], i, resolvedKey));
+    profiles.push(await buildItem(links[i], i, resolvedKey, skipCache));
   }
 
   const master = await buildMasterProfile(slug, profiles, linkIds, resolvedKey);
