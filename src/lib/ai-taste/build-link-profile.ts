@@ -67,6 +67,7 @@ SUBJECT vs VISUAL (mandatory):
 - save_reason and interpretation must NOT collapse "odd subject" into "saved for humor/meme".
   If VISUAL ANALYSIS lists execution/linework/palette/graphic attitude, prefer those as save drivers
   over literal subject nouns.
+- Do not treat ethics/subject categories (recycled materials, sustainability, climate, CSR) as aesthetic drivers unless the visible graphic is literally about that and execution tokens support it.
 
 ROUTING:
 - Tools, parsers, API docs, AI workspaces, hosting dashboards, read-later articles without visual intent:
@@ -326,6 +327,14 @@ const TOOL_PATTERNS = [
   /\b(library|framework|package|plugin|sdk|cli|tool|utility)\b/i,
 ];
 
+/** Strip subject-matter / ethics topics from vision tokens — they are not visual-language axes */
+const SUBJECT_TOPIC_TOKEN_RE =
+  /recycl|sustainab|eco[\s-]?|circular\b|upcycl|carbon\b|climate\b|biodegrad|zero[\s-]?waste|greenwashing|esg\b|csr\b/i;
+
+function stripTopicStylisticTokens(arr: string[]): string[] {
+  return arr.filter(s => !SUBJECT_TOPIC_TOKEN_RE.test(s));
+}
+
 function heuristicResult(input: BuildLinkProfileInput): LlmItemResult {
   const d = normalizeDomain(input.domain);
   const t = (input.title ?? "") + " " + (input.description ?? "");
@@ -423,7 +432,7 @@ function buildVisualLayer(
     if (vp.color_profile?.saturation) colorTone.push(vp.color_profile.saturation);
     if (vp.color_profile?.temperature) colorTone.push(vp.color_profile.temperature);
     const novelty = typeof vp.visual_novelty === "number" ? Math.min(1, Math.max(0, vp.visual_novelty)) : 0.4;
-    const sigs = filterTags([...(vp.stylistic_signals ?? [])]);
+    const sigs = stripTopicStylisticTokens(filterTags([...(vp.stylistic_signals ?? [])]));
     if (vp.controlled_weirdness?.trim()) sigs.push(vp.controlled_weirdness.trim().slice(0, 48));
     return {
       present: true,
@@ -436,9 +445,9 @@ function buildVisualLayer(
       polish_level: polishFromAuthorship(vp.authorship_signal, novelty),
       visual_authorship: authorshipNumeric(vp.authorship_signal),
       visual_oddity: novelty,
-      stylistic_signals: filterTags(sigs),
+      stylistic_signals: stripTopicStylisticTokens(filterTags(sigs)),
       cultural_signal: [],
-      emotional_tone: vp.emotional_tone ?? [],
+      emotional_tone: (vp.emotional_tone ?? []).filter(t => !SUBJECT_TOPIC_TOKEN_RE.test(t)),
       confidence: Math.min(0.95, Math.max(0.18, vp.confidence ?? 0.55)),
       graphic_execution_read: vp.execution_read?.trim() || undefined,
       visual_attraction_hypothesis: [vp.non_subject_attraction, vp.visual_attraction]

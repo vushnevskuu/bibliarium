@@ -39,9 +39,12 @@ STRICT RULES:
 5. Profile "confidence": mean of recurring signal confidences if any; else 0.22–0.30
 6. likely_visual_likes_more_of: concrete visual **formats** (e.g. "high-contrast flat illustration, few colors"), not virtues or lifestyle words
 7. Do not infer humor/meme motive from odd subjects; prefer execution_read / stylistic_signals over depicted nouns
-8. Banned wording anywhere: unique, creative vision, meaningful, journey, resonates, soulful, iconic, curated, sustainability, deep narrative, innovation (unless literal product copy from items)
-9. Thin evidence → fewer signals, lower confidence, shorter summary
-10. No personality language
+8. FORBIDDEN as recurring_visual_signals labels unless 3+ DISTINCT evidence indices AND the label names a visible graphic device (not a cause/topic):
+   recycled / recycling / sustainability / eco / circular / upcycling / carbon / climate / "materials innovation" / packaging-as-topic / vague buckets like "mixed media design", "contemporary design", "visual storytelling"
+9. PREFERRED recurring labels (mix as appropriate): authorship level, polish (raw/lo-fi/refined), linework/render read, oddity, graphic attitude (flat/graphic/maximal), internet-native / subcultural surface, texture/grain, composition pattern — tie each label to evidence indices only
+10. Banned filler words: unique, creative vision, meaningful, journey, resonates, soulful, iconic, curated, deep narrative, innovation (unless literal in inputs)
+11. Thin evidence → fewer signals, lower confidence, shorter summary
+12. No personality language
 
 OUTPUT valid JSON:
 {
@@ -115,11 +118,12 @@ ABSOLUTE GUARDRAILS:
 - estimated_level must be <= 0.65 for all traits
 - Omit persona_blend entirely (return []) unless you have 4+ items with clear, redundant evidence
 - When evidence is thin: return empty trait_hypotheses
+- For any emitted trait: estimated_level and confidence must each be > 0.08 (use OMIT instead of emitting zeros)
 
 OUTPUT valid JSON:
 {
   "trait_hypotheses": [
-    { "trait": "openness_to_experience", "label": "Openness (aesthetic)", "estimated_level": 0.0, "confidence": 0.0, "evidence": ["...", "..."], "coverage_item_indices": [] }
+    { "trait": "openness_to_experience", "label": "Openness (aesthetic)", "estimated_level": 0.35, "confidence": 0.32, "evidence": ["...", "..."], "coverage_item_indices": [] }
   ],
   "persona_blend": [],
   "confidence": 0.0,
@@ -133,11 +137,13 @@ Inputs: visual profile summary, cultural profile summary, utility profile notes,
 RULES:
 1. profile_summary_short: 1-2 sentences, "Current saves suggest..." — inventory co-occurrences, no thesis
 2. profile_summary_rich: 3-4 short sentences max; each sentence must map to an input fragment (visual / cultural / utility split). Drop any clause you cannot trace to inputs.
+   - Visual lane = style/execution/palette/composition patterns only — never merge utility tool names into visual language
+   - If Psychology input says NONE, write zero sentences about personality, tendencies, or "openness"
    - No "creative person", no sustainability/deep narrative/innovation filler unless literal in inputs
    - No person evaluation (narrow/limited/lacks/disconnects)
    - No personality leaps
 3. vector_ready_text: dense keyword line; semicolons; minimal adjectives
-4. confidence: 0.45–0.78 from evidence density; never 0.95 without many cross-item signals
+4. confidence: MUST be >0 and consistent with how specific the inputs are — if Psychology is NONE, keep confidence <= 0.55 unless visual+cultural fragments are very dense
 
 OUTPUT valid JSON:
 {
@@ -146,6 +152,132 @@ OUTPUT valid JSON:
   "confidence": 0.0,
   "vector_ready_text": "..."
 }`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Routing + label hygiene (visual language, not subject topics)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SUBJECT_TOPIC_VISUAL_RE =
+  /recycl|sustainab|eco[\s-]?|circular\b|upcycl|carbon\b|climate\b|biodegrad|zero[\s-]?waste|green\b|packaging\s+innov|materials?\s+science|csr\b|esg\b/i;
+
+const VAGUE_AGGREGATE_RE =
+  /mixed\s*media\s*design|\bmixed\s*media\b(?!\s+collage)|\bcontemporary\s+design\b|\bvisual\s+storytelling\b|unique\s+aesthetic|creative\s+vision|^design$/i;
+
+function isTopicSubjectVisualLabel(s: string): boolean {
+  return SUBJECT_TOPIC_VISUAL_RE.test(s);
+}
+
+function isVagueAggregateLabel(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 4) return true;
+  return VAGUE_AGGREGATE_RE.test(s);
+}
+
+/** Items that may shape the aesthetic aggregate — excludes weak aesthetic weight and tool lane */
+function strictVisualEligible(p: SavedItemV4): boolean {
+  if (!p.profile_routing.affects_visual_profile) return false;
+  if (!p.taste_interpretation.should_affect_aesthetic_profile) return false;
+  if (p.item_kind === "tool") return false;
+  const w = p.taste_interpretation.weight_in_aesthetic_aggregation ?? 0;
+  if (w < 0.2) return false;
+  const utilLane =
+    p.relevance.utility_relevance >= 0.62 &&
+    (p.save_intent.primary === "tool_for_future_use" ||
+      p.save_intent.primary === "workflow_resource");
+  if (utilLane && p.relevance.visual_taste_relevance < 0.58) return false;
+  return true;
+}
+
+function visualLanguageSignalsForAggregate(item: SavedItemV4): string[] {
+  const vl = item.visual_layer;
+  const raw = [...(vl.stylistic_signals ?? []), ...(vl.emotional_tone ?? [])];
+  const tags = raw.map(s => s.trim()).filter(s => s.length > 2);
+  const out = tags.filter(s => !isTopicSubjectVisualLabel(s) && !isVagueAggregateLabel(s));
+  const auth = vl.visual_authorship ?? 0;
+  const odd = vl.visual_oddity ?? 0;
+  if (auth >= 0.62) out.push("authorship-surface-high");
+  else if (auth <= 0.3) out.push("authorship-surface-low");
+  if (odd >= 0.55) out.push("visual-oddity-high");
+  if (vl.polish_level === "raw" || vl.polish_level === "lo-fi") out.push("polish-raw-or-lofi");
+  if (vl.polish_level === "refined" || vl.polish_level === "highly-polished") out.push("polish-refined");
+  if (vl.image_type && vl.image_type !== "unknown") out.push(`image-type:${vl.image_type}`);
+  return Array.from(new Set(out));
+}
+
+function filterSignalsAgainstTopicAndVagueness(signals: EvidencedSignal[]): EvidencedSignal[] {
+  return signals.filter(s => {
+    const L = s.label;
+    if (isVagueAggregateLabel(L)) return false;
+    if (isTopicSubjectVisualLabel(L)) {
+      const uniq = new Set(s.evidence_item_indices ?? []).size;
+      return uniq >= 3 && (s.coverage_count ?? uniq) >= 3;
+    }
+    return true;
+  });
+}
+
+function serializeItemsForVisualAggregation(items: SavedItemV4[], indices: number[]): string {
+  return indices.slice(0, 25).map(i => {
+    const item = items[i];
+    if (!item) return "";
+    const vl = item.visual_layer;
+    const parts = [
+      `[${i}] domain=${item.domain} kind=${item.item_kind} intent=${item.save_intent.primary} aesthetic_weight=${item.taste_interpretation.weight_in_aesthetic_aggregation.toFixed(2)}`,
+      `  NOTE: infer recurring VISUAL LANGUAGE only — not product topics, materials ethics, or utility purpose.`,
+    ];
+    if (vl.present) {
+      parts.push(
+        `  image_type=${vl.image_type} polish=${vl.polish_level} authorship_score=${(vl.visual_authorship ?? 0).toFixed(2)} oddity_score=${(vl.visual_oddity ?? 0).toFixed(2)} visual_conf=${(vl.confidence ?? 0).toFixed(2)}`,
+      );
+      if (vl.graphic_execution_read) parts.push(`  execution_read: ${vl.graphic_execution_read}`);
+      if (vl.visual_attraction_hypothesis) parts.push(`  visual_attraction_read: ${vl.visual_attraction_hypothesis}`);
+      if (vl.stylistic_signals.length) {
+        parts.push(`  stylistic_signals: ${vl.stylistic_signals.filter(s => !isTopicSubjectVisualLabel(s)).join(", ")}`);
+      }
+      if (vl.emotional_tone?.length) parts.push(`  mood: ${vl.emotional_tone.join(", ")}`);
+      if (vl.composition?.length) parts.push(`  composition: ${vl.composition.join(" | ")}`);
+      if (vl.texture_materiality?.length) parts.push(`  texture_materiality: ${vl.texture_materiality.join(", ")}`);
+    }
+    return parts.filter(Boolean).join("\n");
+  }).filter(Boolean).join("\n\n");
+}
+
+function serializeUtilityItemsOnly(items: SavedItemV4[], indices: number[]): string {
+  return indices.slice(0, 25).map(i => {
+    const item = items[i];
+    if (!item) return "";
+    return [
+      `[${i}] domain=${item.domain} kind=${item.item_kind} intent=${item.save_intent.primary}`,
+      `  utility_lane=true — describe tooling/workflow only; do not import visual-motif language from other saves.`,
+      `  title: ${item.title ?? "n/a"}`,
+      `  summary: ${item.semantic_layer.short_summary}`,
+    ].join("\n");
+  }).filter(Boolean).join("\n\n");
+}
+
+function alignMasterSummaryConfidence(
+  ms: MasterSummary,
+  vp: VisualProfile | null,
+  psych: Omit<TastePsychologyV4, "guardrails"> | null,
+): MasterSummary {
+  let c = typeof ms.confidence === "number" && !Number.isNaN(ms.confidence) ? ms.confidence : 0.4;
+  const rich = ms.profile_summary_rich ?? "";
+  const hasPsychClaims = /\b(openness|novelty|aesthetic|personality|tend to|tends to|independent taste)\b/i.test(rich);
+  if (!psych || psych.trait_hypotheses.length === 0) {
+    if (hasPsychClaims) c = Math.min(c, 0.42);
+    else c = Math.min(c, 0.52);
+  } else {
+    const traitMean =
+      psych.trait_hypotheses.reduce((a, t) => a + (t.confidence ?? 0), 0) /
+      Math.max(psych.trait_hypotheses.length, 1);
+    if (hasPsychClaims) c = Math.max(c, traitMean * 0.85);
+  }
+  if (vp && vp.recurring_visual_signals.length > 0) {
+    c = Math.max(c, vp.confidence * 0.72);
+  }
+  if (c <= 0.02 && rich.length > 40) c = vp?.confidence ?? 0.36;
+  return { ...ms, confidence: parseFloat(Math.min(0.82, Math.max(0.24, c)).toFixed(2)) };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Item context serializer
@@ -288,16 +420,18 @@ function partitionVisualSignalsFromLLM(vp: VisualProfile): VisualProfile {
       });
     }
   }
+  const recurringF = filterSignalsAgainstTopicAndVagueness(recurring);
+  const weakF = weak.length ? filterSignalsAgainstTopicAndVagueness(weak) : [];
   let summary_short = vp.summary_short;
-  if (recurring.length === 0 && weak.length > 0 && !/2\+|two or more|cross-item|insufficient|not established/i.test(summary_short)) {
+  if (recurringF.length === 0 && weakF.length > 0 && !/2\+|two or more|cross-item|insufficient|not established/i.test(summary_short)) {
     summary_short =
       "Current saves include visually distinctive items, but no cross-item visual pattern clears the 2-item evidence bar yet.";
   }
   const next: VisualProfile = {
     ...vp,
     summary_short,
-    recurring_visual_signals: recurring,
-    weak_visual_hypotheses: weak.length ? weak : undefined,
+    recurring_visual_signals: recurringF,
+    weak_visual_hypotheses: weakF.length ? weakF : undefined,
   };
   return coerceVisualProfileConfidence(next);
 }
@@ -327,10 +461,20 @@ function normalizePsychology(
     .map(t => {
       const cov = new Set(t.coverage_item_indices ?? []).size;
       if (cov < 3) return null;
+      const el0 = typeof t.estimated_level === "number" && !Number.isNaN(t.estimated_level) ? t.estimated_level : null;
+      const cf0 = typeof t.confidence === "number" && !Number.isNaN(t.confidence) ? t.confidence : null;
+      if (
+        (cf0 === null || cf0 <= 0.04) &&
+        (el0 === null || el0 <= 0.04)
+      ) {
+        return null;
+      }
+      const el = Math.min(0.64, Math.max(0.16, el0 ?? 0.22));
+      const cf = Math.min(cov >= 5 ? 0.5 : 0.42, Math.max(0.24, cf0 ?? 0.28));
       return {
         ...t,
-        estimated_level: parseFloat(Math.min(t.estimated_level, 0.64).toFixed(2)),
-        confidence: parseFloat(Math.min(t.confidence, cov >= 5 ? 0.5 : 0.4).toFixed(2)),
+        estimated_level: parseFloat(el.toFixed(2)),
+        confidence: parseFloat(cf.toFixed(2)),
         evidence: t.evidence.slice(0, 3),
       };
     })
@@ -344,7 +488,7 @@ function normalizePsychology(
   return {
     trait_hypotheses: traitOut,
     persona_blend: persona,
-    confidence: Math.min(0.55, conf),
+    confidence: Math.min(0.55, Math.max(0.24, conf)),
     vector_ready_text: traitOut.length
       ? traitOut.map(t => `${t.trait}~${t.estimated_level.toFixed(2)}`).join("; ")
       : ps.vector_ready_text?.slice(0, 200) ?? "",
@@ -353,8 +497,13 @@ function normalizePsychology(
 
 function fallbackVisualProfile(items: SavedItemV4[], indices: number[]): VisualProfile {
   // Require 2+ items for a signal to appear in the profile — single-item signals stay local
-  const recurring = countWeightedSignals(items, indices, i => i.visual_layer.stylistic_signals, 2);
-  const moods = countWeightedSignals(items, indices, i => i.visual_layer.emotional_tone, 2);
+  const recurring = countWeightedSignals(items, indices, i => visualLanguageSignalsForAggregate(i), 2);
+  const moods = countWeightedSignals(
+    items,
+    indices,
+    i => (i.visual_layer.emotional_tone ?? []).filter(m => !isTopicSubjectVisualLabel(m)),
+    2,
+  );
   const avgAuth = indices.reduce((s, i) => s + (items[i]?.visual_layer.visual_authorship ?? 0), 0) / Math.max(indices.length, 1);
   const avgOddity = indices.reduce((s, i) => s + (items[i]?.visual_layer.visual_oddity ?? 0), 0) / Math.max(indices.length, 1);
   const confidence = profileConfidenceFromSignals(recurring);
@@ -459,7 +608,7 @@ function buildSaveBehavior(items: SavedItemV4[]): SaveBehaviorProfile {
 
 function fallbackPsychology(items: SavedItemV4[]): Omit<TastePsychologyV4, "guardrails"> | null {
   if (items.length < 5) return null;
-  const visualItems = items.filter(i => i.profile_routing.affects_visual_profile);
+  const visualItems = items.filter(i => strictVisualEligible(i));
   if (visualItems.length < 3) return null;
   const avgOddity = visualItems.reduce((s, i) => s + i.visual_layer.visual_oddity, 0) / Math.max(visualItems.length, 1);
   const avgAuth = visualItems.reduce((s, i) => s + i.visual_layer.visual_authorship, 0) / Math.max(visualItems.length, 1);
@@ -510,7 +659,8 @@ export async function buildMasterProfile(
   const key = apiKey ?? process.env.OPENAI_API_KEY;
 
   // Route items into separate buckets
-  const visualIndices = profiles.map((p, i) => ({ p, i })).filter(({ p }) => p.profile_routing.affects_visual_profile).map(({ i }) => i);
+  const visualIndicesAll = profiles.map((p, i) => ({ p, i })).filter(({ p }) => p.profile_routing.affects_visual_profile).map(({ i }) => i);
+  const visualIndicesStrict = profiles.map((p, i) => ({ p, i })).filter(({ p }) => strictVisualEligible(p)).map(({ i }) => i);
   const culturalIndices = profiles.map((p, i) => ({ p, i })).filter(({ p }) => p.profile_routing.affects_cultural_profile).map(({ i }) => i);
   const utilityIndices = profiles.map((p, i) => ({ p, i })).filter(({ p }) => p.profile_routing.affects_utility_profile).map(({ i }) => i);
 
@@ -524,14 +674,24 @@ export async function buildMasterProfile(
     const client = new OpenAI({ apiKey: key });
 
     // Run visual, cultural, utility, psychology in parallel; master summary separately after
-    const vpRaw = visualIndices.length >= 1
-      ? await llmJson<VisualProfile>(VISUAL_PROFILE_PROMPT, `${visualIndices.length} visual items:\n\n${serializeItems(profiles, visualIndices)}`, client, 900)
+    const vpRaw = visualIndicesStrict.length >= 1
+      ? await llmJson<VisualProfile>(
+          VISUAL_PROFILE_PROMPT,
+          `${visualIndicesStrict.length} aesthetic-weighted visual items (visual-language fields only):\n\n${serializeItemsForVisualAggregation(profiles, visualIndicesStrict)}`,
+          client,
+          900,
+        )
       : null;
     const cpRaw = culturalIndices.length >= 1
       ? await llmJson<CulturalProfile>(CULTURAL_PROFILE_PROMPT, `${culturalIndices.length} cultural items:\n\n${serializeItems(profiles, culturalIndices)}`, client, 700)
       : null;
     const upRaw = utilityIndices.length >= 1
-      ? await llmJson<Omit<UtilityProfile, "should_not_contaminate_visual_profile">>(UTILITY_PROFILE_PROMPT, `${utilityIndices.length} utility items:\n\n${serializeItems(profiles, utilityIndices)}`, client, 500)
+      ? await llmJson<Omit<UtilityProfile, "should_not_contaminate_visual_profile">>(
+          UTILITY_PROFILE_PROMPT,
+          `${utilityIndices.length} utility items:\n\n${serializeUtilityItemsOnly(profiles, utilityIndices)}`,
+          client,
+          500,
+        )
       : null;
     const psRaw = profiles.length >= 4
       ? await llmJson<Omit<TastePsychologyV4, "guardrails">>(PSYCHOLOGY_PROMPT, `${profiles.length} items total:\n\n${serializeItems(profiles, profiles.map((_, i) => i))}`, client, 1000)
@@ -539,21 +699,32 @@ export async function buildMasterProfile(
 
     visualProfile = vpRaw
       ? partitionVisualSignalsFromLLM(vpRaw)
-      : (visualIndices.length ? fallbackVisualProfile(profiles, visualIndices) : null);
+      : visualIndicesStrict.length
+        ? coerceVisualProfileConfidence(fallbackVisualProfile(profiles, visualIndicesStrict))
+        : null;
     culturalProfile = cpRaw ?? (culturalIndices.length ? fallbackCulturalProfile(profiles, culturalIndices) : null);
     utilityProfile = upRaw ? { ...upRaw, should_not_contaminate_visual_profile: true as const } : (utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null);
     psychology = normalizePsychology(psRaw ?? fallbackPsychology(profiles), profiles.length);
 
+    const psychForMaster = psychology
+      ? `Psychology (weak hypotheses; keep literal): ${JSON.stringify(psychology.trait_hypotheses)}`
+      : "Psychology: NONE — do not mention personality, tendencies, openness, novelty, or aesthetic engagement as facts.";
+
     const msRaw = profiles.length > 0
       ? await llmJson<MasterSummary>(MASTER_SUMMARY_PROMPT, [
-          visualProfile ? `Visual: ${visualProfile.summary_short}` : "",
+          visualProfile ? `Visual: ${visualProfile.summary_short}` : "Visual: none (no aesthetic-weighted items).",
           culturalProfile ? `Cultural: ${culturalProfile.summary_short}` : "",
-          `${profiles.length} total saves, ${visualIndices.length} visual-routed, ${utilityIndices.length} utility-routed`,
-        ].filter(Boolean).join("\n"), client, 400)
+          `Board: ${profiles.length} saves; aesthetic-visual lane=${visualIndicesStrict.length} items; loosely visual-routed=${visualIndicesAll.length}; utility=${utilityIndices.length}.`,
+          psychForMaster,
+        ].filter(Boolean).join("\n\n"), client, 480)
       : null;
-    masterSummary = msRaw ?? null;
+    masterSummary = msRaw
+      ? alignMasterSummaryConfidence(msRaw, visualProfile, psychology)
+      : null;
   } else {
-    visualProfile = visualIndices.length ? coerceVisualProfileConfidence(fallbackVisualProfile(profiles, visualIndices)) : null;
+    visualProfile = visualIndicesStrict.length
+      ? coerceVisualProfileConfidence(fallbackVisualProfile(profiles, visualIndicesStrict))
+      : null;
     culturalProfile = culturalIndices.length ? fallbackCulturalProfile(profiles, culturalIndices) : null;
     utilityProfile = utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null;
     psychology = normalizePsychology(fallbackPsychology(profiles), profiles.length);
