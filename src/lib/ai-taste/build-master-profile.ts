@@ -41,16 +41,19 @@ STRICT RULES:
 7. Do not infer humor/meme motive from odd subjects; prefer execution_read / stylistic_signals over depicted nouns
 8. FORBIDDEN as recurring_visual_signals labels unless 3+ DISTINCT evidence indices AND the label names a visible graphic device (not a cause/topic):
    recycled / recycling / sustainability / eco / circular / upcycling / carbon / climate / "materials innovation" / packaging-as-topic / vague buckets like "mixed media design", "contemporary design", "visual storytelling"
-9. PREFERRED recurring labels (concrete, recommendation-useful): authored / non-template graphic culture, rough-vs-polished balance, linework & contour quality, graphic attitude, odd-but-controlled imagery, low-polish intentional, subcultural / indie / internet-native feel, poster-like / editorial / zine-like / graphic-reference qualities — each tied to evidence indices
-10. BANNED weak abstractions (never as labels or in summary): "low authorship", "high authorship" as standalone, "inventory-like", "inventory tone", "mixed polish aesthetic", "mixed polish", "unique visual styles", "visual references" without a graphic modifier, "low information density" alone, any label that would NOT help pick the next reference image
+9. PREFERRED recurring labels (concrete, recommendation-useful): authored / non-template graphic culture, rough-vs-polished balance, linework & contour quality, graphic attitude, odd-but-controlled imagery with character, low-polish intentional, subcultural / indie / internet-native feel, poster-like / editorial / zine-like / graphic-reference qualities, illustration energy — each tied to evidence indices
+10. BANNED weak abstractions (never as labels or in summary): "low authorship", "high authorship" as standalone, "inventory-like", "inventory tone", "mixed polish aesthetic", "mixed polish", "unique visual styles", "visual representation", "mixed inspiration", "visual references" without a graphic modifier, "low information density" alone, any label that would NOT help pick the next reference image
 11. RECOMMENDATION TEST: each recurring_visual_signals.label must answer "what would we search for next?" — if not, omit it.
-12. Banned filler words: unique, creative vision, meaningful, journey, resonates, soulful, iconic, curated, deep narrative, innovation (unless literal in inputs)
-13. Thin evidence → fewer signals, lower confidence, shorter summary
-14. No personality language
+12. NO SINGLE-CREATOR SPINE: never let one proper-named director/artist/designer become the center of recurring_visual_signals or summary_short. Named figures may appear only inside a label that foregrounds SHARED graphic execution (e.g. "high-contrast film-still grammar, formalist composition") or stays item-local — not "Kira Muratova" / "X and Y" alone as a board-level recurring label.
+13. Prefer compressing items into recurring GRAPHIC MECHANICS (linework energy, crop, type, grain, attitude) over biography or catalogue-of-names.
+14. vector_ready_text: same as recurring — no bare proper-name pairs without a graphic/stylistic anchor token.
+15. Banned filler words: unique, creative vision, meaningful, journey, resonates, soulful, iconic, curated, deep narrative, innovation (unless literal in inputs)
+16. Thin evidence → fewer signals, lower confidence, shorter summary
+17. No personality language
 
 OUTPUT valid JSON:
 {
-  "summary_short": "1-2 sentences starting with 'Current saves suggest...' Name recurring graphic/stylistic co-occurrences (authored / non-template / linework / palette / attitude), not meta-inventory language.",
+  "summary_short": "1-2 sentences starting with 'Current saves suggest...' Stress recurring graphic/stylistic co-occurrences (authored / non-template / graphic / rough-intentional / odd-with-character / subcultural surface / linework energy). Do not center on one creator name.",
   "recurring_visual_signals": [
     { "label": "...", "strength": 0.0, "confidence": 0.0, "coverage_count": 0, "evidence_item_indices": [] }
   ],
@@ -74,10 +77,11 @@ STRICT RULES:
 1. "Current saves suggest..." — never "this person is/has/tends to"
 2. core_attraction: only if 2+ items share a checkable theme. Else leave empty.
 3. recurring_patterns: 2+ DISTINCT indices per pattern; omit single-item "patterns"
-4. likely_dislikes: only with explicit counter-evidence across items; else []
-5. No deficits, limits, or psycho-moral reads
-6. confidence ≈ average of pattern confidences when patterns exist; else low
-7. Thin evidence → fewer patterns, lower confidence; no filler tropes (sustainability, "deep stories", innovation clichés)
+4. Do not center recurring_patterns on a lone proper-named creator, film, or artwork unless 3+ DISTINCT evidence_item_indices clearly share that exact cluster; prefer era/movement/venue/channel language when evidence is thinner
+5. likely_dislikes: only with explicit counter-evidence across items; else []
+6. No deficits, limits, or psycho-moral reads
+7. confidence ≈ average of pattern confidences when patterns exist; else low
+8. Thin evidence → fewer patterns, lower confidence; no filler tropes (sustainability, "deep stories", innovation clichés)
 
 OUTPUT valid JSON:
 {
@@ -138,15 +142,16 @@ const MASTER_SUMMARY_PROMPT = `Merge the given profile fragments into a master s
 Inputs: visual profile summary, cultural profile summary, utility profile notes, save behavior data.
 
 RULES:
-1. profile_summary_short: 1-2 sentences, "Current saves suggest..." — name recurring graphic/stylistic co-occurrences only; no thesis, no "inventory" framing
+1. profile_summary_short: 1-2 sentences, "Current saves suggest..." — lead with recurring graphic/stylistic language from the visual fragment; no thesis, no "inventory" framing, no "visual representation" / "mixed inspiration" / "unique visual styles"
 2. profile_summary_rich: 3-4 short sentences max; each sentence must map to an input fragment (visual / cultural / utility split). Drop any clause you cannot trace to inputs.
    - Visual lane = style/execution/palette/composition patterns only — never merge utility tool names into visual language
+   - Do not open with or over-weight a single proper-named creator unless the cultural fragment shows 3+ items backing that cluster; prefer authored / non-template / graphic / odd-character / signal-rich visual language for the visual sentence
    - If Psychology input says NONE, write zero sentences about personality, tendencies, or "openness"
    - No "creative person", no sustainability/deep narrative/innovation filler unless literal in inputs
    - No person evaluation (narrow/limited/lacks/disconnects)
    - No personality leaps
-3. vector_ready_text: dense keyword line; semicolons; minimal adjectives
-4. confidence: MUST be >0 and consistent with how specific the inputs are — if Psychology is NONE, keep confidence <= 0.55 unless visual+cultural fragments are very dense
+3. vector_ready_text: dense keyword line; semicolons; minimal adjectives — prioritize visual recurring labels over proper names
+4. confidence: MUST be >0 and consistent with how specific the inputs are — if Psychology is NONE, keep confidence <= 0.55 unless visual+cultural fragments are very dense; if the visual fragment has no recurring_visual_signals, do not imply high specificity
 
 OUTPUT valid JSON:
 {
@@ -164,11 +169,53 @@ const SUBJECT_TOPIC_VISUAL_RE =
   /recycl|sustainab|eco[\s-]?|circular\b|upcycl|carbon\b|climate\b|biodegrad|zero[\s-]?waste|green\b|packaging\s+innov|materials?\s+science|csr\b|esg\b/i;
 
 const VAGUE_AGGREGATE_RE =
-  /mixed\s*media\s*design|\bmixed\s*media\b(?!\s+collage)|\bcontemporary\s+design\b|\bvisual\s+storytelling\b|unique\s+aesthetic|creative\s+vision|^design$/i;
+  /mixed\s*media\s*design|\bmixed\s*media\b(?!\s+collage)|\bcontemporary\s+design\b|\bvisual\s+storytelling\b|unique\s+aesthetic|creative\s+vision|^design$|\bmixed\s+inspiration\b|\bvisual\s+representation\b/i;
 
 /** Profile / LLM noise that reads as critique or empty abstraction — drop from signals + summaries */
 const BANNED_WEAK_PROFILE_LABEL_RE =
-  /\b(low|high)\s+authorship\b|authorship-surface-low|inventory[-\s]?like|inventory\s+tone|mixed\s+polish|polish\s+aesthetic\b|generic\s+unique|unique\s+visual\s+styles?\b|\bvisual\s+references?\b(?!\s+(with|showing|using|in\s))|low\s+openness|openness\s*\(?low|aesthetic\s+experience\s*\(?low|low-value|weak\s+abstraction/i;
+  /\b(low|high)\s+authorship\b|authorship-surface-low|inventory[-\s]?like|inventory\s+tone|mixed\s+polish|polish\s+aesthetic\b|generic\s+unique|unique\s+visual\s+styles?\b|\bvisual\s+representation\b|\bmixed\s+inspiration\b|\bvisual\s+references?\b(?!\s+(with|showing|using|in\s))|low\s+openness|openness\s*\(?low|aesthetic\s+experience\s*\(?low|low-value|weak\s+abstraction/i;
+
+/** If a recurring label already encodes graphic/stylistic language, do not treat as "name-only center" */
+const GRAPHIC_LANGUAGE_IN_RECURRING_RE =
+  /linework|contour|palette|halftone|grain|illustration|poster|editorial|zine|risograph|riso|collage|vector|flat|high-contrast|internet-native|subcultural|indie|graphic|authored|non-template|anti-template|lo-fi|rough|vernacular|odd|controlled|hand|ink|brush|texture|composition|typograph|letterform|cinematic|film-still|film\s+still|still\b|frame|layout|montage|cut-?out|mixed-media|figure[-\s]?ground|signal-rich|character\b|energy|attitude|culture-forward|formalist|expressionist|surreal|vernacular|editorial/i;
+
+const LEADING_INTEREST_PHRASE_RE =
+  /^(?:interest|attraction|affinity|drawn|draw|saves?|saving|focus|centering|centered\s+on|references?\s+to|tribute\s+to|fandom|fan\s+of)\s+(?:in|on|to|toward|towards)?\s*/i;
+
+/** Avoid false positives: magazines, cities, orgs */
+const NAME_CLUSTER_STOPWORDS = new Set([
+  "new", "los", "las", "san", "the", "van", "von", "de", "la", "le", "da", "del", "st",
+  "york", "yorker", "times", "post", "street", "avenue", "press", "books", "media", "group",
+  "studios", "records", "foundation", "museum", "gallery", "festival", "week", "science", "atlantic",
+]);
+
+function stripLeadingInterestPhrase(label: string): string {
+  return label.replace(LEADING_INTEREST_PHRASE_RE, "").trim();
+}
+
+/**
+ * True when the label reads as a proper-name / biography spine without anchoring graphic language
+ * (e.g. "Kira Muratova", "David Lynch retrospectives" without execution tokens).
+ */
+function labelIsProperNameOrBiographyCenter(label: string): boolean {
+  const core = stripLeadingInterestPhrase(label);
+  if (GRAPHIC_LANGUAGE_IN_RECURRING_RE.test(core)) return false;
+  const words = core.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 6) return false;
+  const lower = words.map(w => w.replace(/['’]s$/i, "").toLowerCase());
+  if (lower.some(w => NAME_CLUSTER_STOPWORDS.has(w))) return false;
+  if (/\b[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}\b/.test(core)) return true;
+  if (/\b[А-ЯЁ][а-яё]{2,}\s+[А-ЯЁ][а-яё]{2,}\b/.test(core)) return true;
+  if (/\b(film|cinema|movie|director|artist|designer|photographer)\b/i.test(core)) {
+    return /\b[A-Z][a-z]{2,}\b/.test(core) || /\b[А-ЯЁ][а-яё]{2,}\b/.test(core);
+  }
+  return false;
+}
+
+function culturalCoreLooksLikeLoneFigure(s: string): boolean {
+  if (!labelIsProperNameOrBiographyCenter(s)) return false;
+  return !/\b(movement|wave|school|cinema|film|scene|era|collective|festival|label|gallery|arthouse|documentary)\b/i.test(s);
+}
 
 function isBannedWeakProfileLabel(label: string): boolean {
   return BANNED_WEAK_PROFILE_LABEL_RE.test(label);
@@ -180,7 +227,7 @@ function passesRecommendationUsefulness(label: string): boolean {
   if (L.length < 8) return false;
   if (isBannedWeakProfileLabel(L)) return false;
   const concrete =
-    /linework|contour|palette|halftone|grain|illustration|poster|editorial|zine|risograph|riso|collage|vector|raster|flat|high-contrast|internet-native|subcultural|indie|graphic|composition|crop|type|slug|typograph|letterform|authored|non-template|anti-template|lo-fi|raw|rough|vernacular|odd|controlled|hand|ink|brush|figure|ground|reference|material|texture|layered|maximal|minimal|brutal|energy|surface|attitude|cropped|still|frame|lighting|symmetr|asymmetr/i;
+    /linework|contour|palette|halftone|grain|illustration|poster|editorial|zine|risograph|riso|collage|vector|raster|flat|high-contrast|internet-native|subcultural|indie|graphic|composition|crop|type|slug|typograph|letterform|authored|non-template|anti-template|lo-fi|raw|rough|vernacular|odd|controlled|strange|character|hand|ink|brush|figure|ground|reference|material|texture|layered|maximal|minimal|brutal|energy|surface|attitude|cropped|still|frame|lighting|symmetr|asymmetr|intentional|signal-rich/i;
   if (concrete.test(L)) return true;
   const words = L.split(/\s+/).length;
   return (words >= 3 && L.length >= 22) || (words >= 2 && L.length >= 28);
@@ -223,17 +270,30 @@ function visualLanguageSignalsForAggregate(item: SavedItemV4): string[] {
   if (vl.polish_level === "raw" || vl.polish_level === "lo-fi") out.push("intentional-low-polish");
   if (vl.polish_level === "refined" || vl.polish_level === "highly-polished") out.push("polish-refined");
   const ex = vl.graphic_execution_read?.toLowerCase() ?? "";
+  const styLower = [...(vl.stylistic_signals ?? [])].join(" ").toLowerCase();
+  const blob = `${styLower} ${ex}`;
   if (/linework|contour|ink|brush|stroke|halftone|grain|collage|poster|type|letterform/i.test(ex)) {
     out.push("execution-led-graphic");
+  }
+  if (/linework|illustration|brush|ink|stroke|energy|expressive/i.test(blob)) out.push("linework-illustration-energy");
+  if (/subcultural|indie|internet-native|underground|counterculture|club\s+culture/i.test(blob)) {
+    out.push("subcultural-indie-surface");
   }
   return Array.from(new Set(out));
 }
 
-function filterSignalsAgainstTopicAndVagueness(signals: EvidencedSignal[]): EvidencedSignal[] {
+type SignalFilterOpts = { allowProperNameCenter?: boolean };
+
+function filterSignalsAgainstTopicAndVagueness(
+  signals: EvidencedSignal[],
+  opts?: SignalFilterOpts,
+): EvidencedSignal[] {
+  const allowName = opts?.allowProperNameCenter === true;
   return signals.filter(s => {
     const L = s.label;
     if (isVagueAggregateLabel(L)) return false;
     if (isBannedWeakProfileLabel(L)) return false;
+    if (!allowName && labelIsProperNameOrBiographyCenter(L)) return false;
     if (isTopicSubjectVisualLabel(L)) {
       const uniq = new Set(s.evidence_item_indices ?? []).size;
       return uniq >= 3 && (s.coverage_count ?? uniq) >= 3;
@@ -242,11 +302,51 @@ function filterSignalsAgainstTopicAndVagueness(signals: EvidencedSignal[]): Evid
   });
 }
 
+function filterCulturalRecurringPatterns(patterns: EvidencedSignal[]): EvidencedSignal[] {
+  return (patterns ?? []).filter(p => {
+    const L = p.label;
+    if (isVagueAggregateLabel(L)) return false;
+    if (isBannedWeakProfileLabel(L)) return false;
+    const uniq = new Set(p.evidence_item_indices ?? []).size;
+    if (labelIsProperNameOrBiographyCenter(L) && uniq < 3) return false;
+    return true;
+  });
+}
+
+function sanitizeCulturalProfile(cp: CulturalProfile): CulturalProfile {
+  const patterns = filterCulturalRecurringPatterns(cp.recurring_patterns ?? []);
+  const core = (cp.core_attraction ?? []).filter(
+    s => !isBannedWeakProfileLabel(s) && !culturalCoreLooksLikeLoneFigure(s),
+  );
+  return {
+    ...cp,
+    summary_short: scrubBannedPhrasesFromText(cp.summary_short),
+    recurring_patterns: patterns,
+    core_attraction: core,
+    vector_ready_text: scrubBannedPhrasesFromText(cp.vector_ready_text),
+  };
+}
+
+function dedupeWeakVisualByLabel(weak: EvidencedSignal[]): EvidencedSignal[] {
+  const out: EvidencedSignal[] = [];
+  const seen = new Set<string>();
+  for (const w of weak) {
+    const k = w.label.trim().toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(w);
+  }
+  return out;
+}
+
 function scrubBannedPhrasesFromText(text: string): string {
   let t = text;
   t = t.replace(/\binventory[-\s]?like\b/gi, "graphic");
   t = t.replace(/\bmixed\s+polish\b|\bmixed\s+polish\s+aesthetic\b/gi, "raw-versus-polished graphic balance");
   t = t.replace(/\blow\s+authorship\b/gi, "authored non-template graphics");
+  t = t.replace(/\bvisual\s+representation\b/gi, "graphic read");
+  t = t.replace(/\bmixed\s+inspiration\b/gi, "mixed graphic pulls");
+  t = t.replace(/\bunique\s+visual\s+styles?\b/gi, "distinct graphic surfaces");
   t = t.replace(/\blow\s+openness\b|\bopenness\s*\(?low\b|\blow\s+openness\s+to\b/gi, "");
   t = t.replace(/\baesthetic\s+experience\s*\(?low\b/gi, "");
   t = t.replace(/\s{2,}/g, " ").replace(/\s+([.,;:])/g, "$1").trim();
@@ -256,7 +356,7 @@ function scrubBannedPhrasesFromText(text: string): string {
 function sanitizeVisualProfileCopy(vp: VisualProfile): VisualProfile {
   const recurring = filterSignalsAgainstTopicAndVagueness(vp.recurring_visual_signals ?? []);
   const weak = vp.weak_visual_hypotheses?.length
-    ? filterSignalsAgainstTopicAndVagueness(vp.weak_visual_hypotheses)
+    ? filterSignalsAgainstTopicAndVagueness(vp.weak_visual_hypotheses, { allowProperNameCenter: true })
     : undefined;
   const likes = (vp.likely_visual_likes_more_of ?? []).filter(
     x => !isBannedWeakProfileLabel(x) && passesRecommendationUsefulness(x),
@@ -281,6 +381,7 @@ function serializeItemsForVisualAggregation(items: SavedItemV4[], indices: numbe
     const parts = [
       `[${i}] domain=${item.domain} kind=${item.item_kind} intent=${item.save_intent.primary} aesthetic_weight=${item.taste_interpretation.weight_in_aesthetic_aggregation.toFixed(2)}`,
       `  NOTE: infer recurring VISUAL LANGUAGE only — not product topics, materials ethics, or utility purpose.`,
+      `  NOTE: aggregate SHARED graphic mechanics (linework, grain, crop, type, attitude, odd-but-controlled) — not a catalogue of proper names; one-off biographical references stay weak/single-item only.`,
     ];
     if (vl.present) {
       parts.push(
@@ -331,6 +432,8 @@ function alignMasterSummaryConfidence(
   }
   if (vp && vp.recurring_visual_signals.length > 0) {
     c = Math.max(c, vp.confidence * 0.72);
+  } else if (vp && vp.recurring_visual_signals.length === 0) {
+    c = Math.min(c, 0.48);
   }
   if (c <= 0.02 && rich.length > 40) c = vp?.confidence ?? 0.36;
   return { ...ms, confidence: parseFloat(Math.min(0.82, Math.max(0.24, c)).toFixed(2)) };
@@ -478,16 +581,27 @@ function partitionVisualSignalsFromLLM(vp: VisualProfile): VisualProfile {
     }
   }
   const recurringF = filterSignalsAgainstTopicAndVagueness(recurring);
-  const weakF = weak.length ? filterSignalsAgainstTopicAndVagueness(weak) : [];
+  const namedDemoted = recurringF.filter(s => labelIsProperNameOrBiographyCenter(s.label));
+  const recurringNoName = recurringF.filter(s => !labelIsProperNameOrBiographyCenter(s.label));
+  const namedAsWeak: EvidencedSignal[] = namedDemoted.map(s => ({
+    ...s,
+    coverage_count: Math.min(s.coverage_count, new Set(s.evidence_item_indices ?? []).size),
+    confidence: parseFloat(Math.min(s.confidence, 0.32).toFixed(2)),
+    strength: parseFloat(Math.min(s.strength, 0.4).toFixed(2)),
+  }));
+  const weakF = dedupeWeakVisualByLabel([
+    ...(weak.length ? filterSignalsAgainstTopicAndVagueness(weak, { allowProperNameCenter: true }) : []),
+    ...namedAsWeak,
+  ]);
   let summary_short = vp.summary_short;
-  if (recurringF.length === 0 && weakF.length > 0 && !/2\+|two or more|cross-item|insufficient|not established/i.test(summary_short)) {
+  if (recurringNoName.length === 0 && weakF.length > 0 && !/2\+|two or more|cross-item|insufficient|not established/i.test(summary_short)) {
     summary_short =
       "Current saves include visually distinctive items, but no cross-item visual pattern clears the 2-item evidence bar yet.";
   }
   const next: VisualProfile = {
     ...vp,
     summary_short,
-    recurring_visual_signals: recurringF,
+    recurring_visual_signals: recurringNoName,
     weak_visual_hypotheses: weakF.length ? weakF : undefined,
   };
   return coerceAndSanitizeVisual(next);
@@ -499,18 +613,27 @@ function coerceAndSanitizeVisual(vp: VisualProfile): VisualProfile {
 }
 
 function coerceVisualProfileConfidence(vp: VisualProfile): VisualProfile {
-  let c = typeof vp.confidence === "number" ? vp.confidence : 0;
-  if (vp.recurring_visual_signals.length > 0) {
+  const raw = typeof vp.confidence === "number" && !Number.isNaN(vp.confidence) ? vp.confidence : 0;
+  const recurring = vp.recurring_visual_signals;
+  const weak = vp.weak_visual_hypotheses ?? [];
+  let c = raw;
+
+  if (recurring.length > 0) {
     const meanSig =
-      vp.recurring_visual_signals.reduce((a, s) => a + s.confidence, 0) /
-      vp.recurring_visual_signals.length;
-    c = Math.max(c, meanSig, profileConfidenceFromSignals(vp.recurring_visual_signals), 0.34);
-  } else if ((vp.weak_visual_hypotheses?.length ?? 0) > 0) {
-    c = Math.max(c, 0.29);
+      recurring.reduce((a, s) => a + s.confidence, 0) / recurring.length;
+    const fromSignals = profileConfidenceFromSignals(recurring);
+    c = Math.max(meanSig * 0.96, fromSignals * 0.98, 0.32);
+    c = Math.min(0.72, c);
+    if (recurring.length >= 3) c = Math.min(0.78, Math.max(c, meanSig));
+    c = Math.min(c, Math.max(raw, meanSig) + 0.06);
+  } else if (weak.length > 0) {
+    const wm = weak.reduce((a, s) => a + s.confidence, 0) / weak.length;
+    c = Math.min(0.32, Math.max(0.22, wm * 0.88, raw * 0.9));
   } else {
-    c = Math.max(c, 0.24);
+    c = Math.min(0.3, Math.max(0.22, raw * 0.88));
   }
-  return { ...vp, confidence: parseFloat(Math.min(0.9, c).toFixed(2)) };
+
+  return { ...vp, confidence: parseFloat(Math.min(0.88, c).toFixed(2)) };
 }
 
 function normalizePsychology(
@@ -772,7 +895,11 @@ export async function buildMasterProfile(
       : visualIndicesStrict.length
         ? coerceAndSanitizeVisual(fallbackVisualProfile(profiles, visualIndicesStrict))
         : null;
-    culturalProfile = cpRaw ?? (culturalIndices.length ? fallbackCulturalProfile(profiles, culturalIndices) : null);
+    culturalProfile = cpRaw
+      ? sanitizeCulturalProfile(cpRaw)
+      : culturalIndices.length
+        ? sanitizeCulturalProfile(fallbackCulturalProfile(profiles, culturalIndices))
+        : null;
     utilityProfile = upRaw ? { ...upRaw, should_not_contaminate_visual_profile: true as const } : (utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null);
     psychology = normalizePsychology(psRaw ?? fallbackPsychology(profiles), profiles.length);
 
@@ -795,7 +922,9 @@ export async function buildMasterProfile(
     visualProfile = visualIndicesStrict.length
       ? coerceAndSanitizeVisual(fallbackVisualProfile(profiles, visualIndicesStrict))
       : null;
-    culturalProfile = culturalIndices.length ? fallbackCulturalProfile(profiles, culturalIndices) : null;
+    culturalProfile = culturalIndices.length
+      ? sanitizeCulturalProfile(fallbackCulturalProfile(profiles, culturalIndices))
+      : null;
     utilityProfile = utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null;
     psychology = normalizePsychology(fallbackPsychology(profiles), profiles.length);
   }
