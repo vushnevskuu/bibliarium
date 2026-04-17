@@ -68,6 +68,16 @@ RULES:
 - observable_evidence: directly observable facts, not speculation
 - interpretation: higher-level taste inferences
 
+CRITICAL — DO NOT:
+- Make evaluative judgments about the person (negative or positive)
+- Infer limitations, weaknesses, deficits, or disconnects from sparse curation data
+- Assume humorous, strange, or unusual imagery was saved for joke/meme value
+  → Such imagery may be saved for linework, illustration style, graphic attitude,
+    palette, composition, or subcultural visual language — infer visual qualities first
+- Produce personality conclusions that outrun the evidence
+- Weight single-item themes as strong signals — keep them local to observable_evidence
+- If data is sparse: output less, not more; lower confidence instead of speculating
+
 OUTPUT valid JSON only:
 {
   "save_intent": {

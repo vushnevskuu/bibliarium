@@ -29,18 +29,23 @@ import type {
 
 const VISUAL_PROFILE_PROMPT = `Analyze these visual-routed saved items and produce a visual taste profile.
 
-Only use items explicitly tagged as affecting visual profile. Ignore utility/tool items.
+STRICT RULES — violations make the output useless:
+1. Language: "Current saves suggest..." — never "this person is/has/shows"
+2. recurring_visual_signals: ONLY include signals appearing in 2+ items. Single-item signals must not appear here.
+3. strength/confidence must match evidence: if only 2 items support a signal, confidence < 0.55
+4. confidence at profile level MUST equal the average of recurring signal confidences — never output 0.0 when signals are non-zero
+5. likely_visual_likes_more_of: grounded in observed patterns only, 3-4 items max
+6. DO NOT produce negative meta-judgments about the user (no "narrow scope", "disconnect", "limited", etc.)
+7. DO NOT assume unusual/strange imagery = meme/joke interest. Infer visual qualities: linework, illustration style, graphic attitude, palette, composition, subcultural visual language.
+8. DO NOT overweight single-item themes — they must stay in individual items, not the profile
+9. When evidence is thin: fewer signals, lower confidence. Output less, not more.
+10. DO NOT produce personality conclusions (no "this person tends to...", "suggests a personality that...")
 
-RULES:
-- "current saves suggest..." language only — no "this person is..."
-- recurring_visual_signals: only include signals appearing in 2+ items
-- strength = frequency-weighted score 0–1
-- likely_visual_likes_more_of: grounded in observed patterns only
-- confidence should reflect evidence quality
+Output describes WHAT REPEATS in the saves, nothing else.
 
 OUTPUT valid JSON:
 {
-  "summary_short": "2 sentences starting with 'Current saves suggest...'",
+  "summary_short": "1-2 sentences starting with 'Current saves suggest...' Dry, precise, no evaluative language.",
   "recurring_visual_signals": [
     { "label": "...", "strength": 0.0, "confidence": 0.0, "coverage_count": 0, "evidence_item_indices": [] }
   ],
@@ -52,23 +57,26 @@ OUTPUT valid JSON:
     "mainstream_vs_subcultural": 0.0,
     "decorative_vs_structural": 0.0
   },
-  "repeated_moods": ["2-4 mood strings from visual items only"],
-  "likely_visual_likes_more_of": ["4-5 specific types of content"],
+  "repeated_moods": ["max 3 mood strings, only from multi-item patterns"],
+  "likely_visual_likes_more_of": ["3-4 specific types grounded in evidence"],
   "confidence": 0.0,
-  "vector_ready_text": "compact embedding-ready summary"
+  "vector_ready_text": "compact, non-evaluative, embedding-ready summary of recurring visual signals"
 }`;
 
 const CULTURAL_PROFILE_PROMPT = `Analyze these culturally-routed saved items.
 
-RULES:
-- Evidence-backed claims only
-- core_attraction: 3-4 specific signals (no generic "diverse interests")
-- likely_dislikes: only if real counter-evidence exists in saves, otherwise empty array
-- "current saves suggest..." language
+STRICT RULES:
+1. "Current saves suggest..." language — never "this person is/has/tends to"
+2. core_attraction: only patterns supported by 2+ items. Leave empty if none.
+3. recurring_patterns: 2+ items required per pattern. Single items = omit.
+4. likely_dislikes: ONLY include if real counter-evidence exists (e.g. multiple saves explicitly avoiding a type). Otherwise: empty array.
+5. DO NOT infer limitations, weaknesses, disconnects, or evaluative judgments from the data.
+6. confidence at profile level must equal average of pattern confidences — not 0.0 when patterns are present.
+7. When evidence is thin: fewer claims, lower confidence. Do not fill in with generic observations.
 
 OUTPUT valid JSON:
 {
-  "summary_short": "...",
+  "summary_short": "1-2 sentences. Dry. 'Current saves suggest...'. No meta-judgments.",
   "core_attraction": [],
   "recurring_patterns": [
     { "label": "...", "strength": 0.0, "confidence": 0.0, "coverage_count": 0, "evidence_item_indices": [] }
@@ -93,42 +101,49 @@ OUTPUT valid JSON:
   "vector_ready_text": "..."
 }`;
 
-const PSYCHOLOGY_PROMPT = `Infer non-clinical personality and cognition tendencies from saved links.
+const PSYCHOLOGY_PROMPT = `Infer non-clinical aesthetic and cognition tendencies from saved links.
 
 ABSOLUTE GUARDRAILS:
-- NOT diagnosis, NOT clinical, NOT MBTI
-- No mental health, trauma, intelligence, political claims
-- estimated_level is 0.0–1.0 scalar
-- Lower confidence when evidence is sparse
-- "save patterns tentatively suggest..." language
+- NOT diagnosis, NOT clinical, NOT MBTI, NOT personality test
+- No mental health, trauma, intelligence, attachment, political claims
+- DO NOT produce negative conclusions about the user (no "lacks X", "limited Y", "disconnected from Z")
+- DO NOT make evaluative judgments from sparse data
+- estimated_level is a 0.0–1.0 probability scalar — not a category
+- If fewer than 3 items support a trait: confidence must be < 0.4
+- "save patterns tentatively suggest..." language only
+- When evidence is thin: omit traits entirely rather than speculating
+- Persona descriptions must be neutral and descriptive, NOT evaluative
 
-TRAITS to analyze:
+TRAITS to analyze (only include if 2+ items support it):
 openness_to_experience, aesthetic_engagement, need_for_cognition,
 tolerance_for_ambiguity, novelty_seeking, independence_of_taste,
 identity_signaling_via_curation
 
-For each: label, estimated_level (0–1), confidence (0–1), evidence (2-3 strings), coverage_item_indices
-
 OUTPUT valid JSON:
 {
   "trait_hypotheses": [
-    { "trait": "openness_to_experience", "label": "Openness to Experience", "estimated_level": 0.0, "confidence": 0.0, "evidence": [], "coverage_item_indices": [] }
+    { "trait": "...", "label": "...", "estimated_level": 0.0, "confidence": 0.0, "evidence": ["observable fact 1", "observable fact 2"], "coverage_item_indices": [] }
   ],
   "persona_blend": [
-    { "persona": "...", "weight": 0.0, "description": "..." }
+    { "persona": "...", "weight": 0.0, "description": "1 sentence, neutral, no evaluation" }
   ],
   "confidence": 0.0,
   "vector_ready_text": "..."
 }`;
 
-const MASTER_SUMMARY_PROMPT = `Write a master summary for a taste dossier. 
+const MASTER_SUMMARY_PROMPT = `Write a master summary for a taste dossier.
 
 Inputs: visual profile summary, cultural profile summary, utility profile notes, save behavior data.
 
 RULES:
-- profile_summary_short: 1-2 sentences. Evidence-grounded. "Current saves suggest..."
-- profile_summary_rich: 3-4 sentences. Probabilistic, specific, non-flattering.
-- vector_ready_text: compact, LLM-conditioning-ready
+1. profile_summary_short: 1-2 sentences. Dry. "Current saves suggest..." Never "this person is..."
+2. profile_summary_rich: 3-4 sentences. Describe recurring attraction patterns only.
+   - No evaluative language about the person (no "narrow", "limited", "disconnects", "lacks")
+   - No personality conclusions that outrun the evidence
+   - No negative meta-judgments of any kind
+   - Only describe what repeatedly appears in the saves
+3. vector_ready_text: compact, non-evaluative, LLM-conditioning-ready
+4. confidence must reflect actual evidence quality — if profile summaries contain real signals, confidence >= 0.5
 
 OUTPUT valid JSON:
 {
@@ -195,13 +210,15 @@ async function llmJson<T>(
 function countWeightedSignals(
   items: SavedItemV4[],
   indices: number[],
-  getSignals: (item: SavedItemV4) => string[]
+  getSignals: (item: SavedItemV4) => string[],
+  minCount = 1
 ): EvidencedSignal[] {
   const map = new Map<string, { score: number; count: number; idx: number[] }>();
   for (const i of indices) {
     const item = items[i];
     if (!item) continue;
-    const weight = item.taste_interpretation.weight_in_aesthetic_aggregation;
+    // Use max(weight, 0.3) so items without explicit weights still contribute
+    const weight = Math.max(item.taste_interpretation.weight_in_aesthetic_aggregation ?? 0, 0.3);
     for (const s of getSignals(item)) {
       if (!s || s.length < 3) continue;
       const e = map.get(s) ?? { score: 0, count: 0, idx: [] };
@@ -212,26 +229,43 @@ function countWeightedSignals(
     }
   }
   return Array.from(map.entries())
-    .filter(([, v]) => v.count >= 1)
+    .filter(([, v]) => v.count >= minCount)
     .sort((a, b) => b[1].score - a[1].score)
     .slice(0, 8)
-    .map(([label, v]) => ({
-      label,
-      strength: parseFloat(Math.min(1, v.score / Math.max(indices.length, 1)).toFixed(2)),
-      confidence: parseFloat(Math.min(0.8, v.score / indices.length).toFixed(2)),
-      coverage_count: v.count,
-      evidence_item_indices: v.idx,
-    }));
+    .map(([label, v]) => {
+      const coverage = v.count / Math.max(indices.length, 1);
+      // Confidence: based on coverage AND score magnitude, floored at 0.15 if count >= 1
+      const rawConf = Math.min(0.85, coverage * 1.4);
+      const confidence = parseFloat(Math.max(0.15, rawConf).toFixed(2));
+      return {
+        label,
+        strength: parseFloat(Math.min(1, coverage * 1.5).toFixed(2)),
+        confidence,
+        coverage_count: v.count,
+        evidence_item_indices: v.idx,
+      };
+    });
+}
+
+/** Derive profile-level confidence from its signals — never returns 0.0 when signals exist */
+function profileConfidenceFromSignals(signals: EvidencedSignal[]): number {
+  if (signals.length === 0) return 0.2;
+  const avg = signals.reduce((s, sig) => s + sig.confidence, 0) / signals.length;
+  return parseFloat(Math.max(0.25, avg).toFixed(2));
 }
 
 function fallbackVisualProfile(items: SavedItemV4[], indices: number[]): VisualProfile {
-  const signals = countWeightedSignals(items, indices, i => i.visual_layer.stylistic_signals);
-  const moods = countWeightedSignals(items, indices, i => i.visual_layer.emotional_tone);
+  // Require 2+ items for a signal to appear in the profile — single-item signals stay local
+  const recurring = countWeightedSignals(items, indices, i => i.visual_layer.stylistic_signals, 2);
+  const moods = countWeightedSignals(items, indices, i => i.visual_layer.emotional_tone, 2);
   const avgAuth = indices.reduce((s, i) => s + (items[i]?.visual_layer.visual_authorship ?? 0), 0) / Math.max(indices.length, 1);
   const avgOddity = indices.reduce((s, i) => s + (items[i]?.visual_layer.visual_oddity ?? 0), 0) / Math.max(indices.length, 1);
+  const confidence = profileConfidenceFromSignals(recurring);
   return {
-    summary_short: `Current saves suggest ${signals.slice(0, 2).map(s => s.label).join(", ") || "mixed"} visual tendencies. Heuristic fallback.`,
-    recurring_visual_signals: signals,
+    summary_short: recurring.length
+      ? `Current saves suggest recurring visual signals: ${recurring.slice(0, 2).map(s => s.label).join(", ")}.`
+      : `Current saves contain visual items but insufficient recurring signals for pattern detection.`,
+    recurring_visual_signals: recurring,
     visual_preference_axes: {
       clean_vs_textured: 0,
       polished_vs_raw: -(avgAuth - 0.5),
@@ -240,27 +274,33 @@ function fallbackVisualProfile(items: SavedItemV4[], indices: number[]): VisualP
       mainstream_vs_subcultural: avgOddity,
       decorative_vs_structural: 0,
     },
-    repeated_moods: moods.slice(0, 4).map(m => m.label),
+    repeated_moods: moods.slice(0, 3).map(m => m.label),
     likely_visual_likes_more_of: [],
-    confidence: 0.35,
-    vector_ready_text: `Visual signals: ${signals.slice(0, 4).map(s => s.label).join(", ")}`,
+    confidence,
+    vector_ready_text: recurring.length
+      ? `Visual signals (${indices.length} items): ${recurring.slice(0, 4).map(s => s.label).join(", ")}`
+      : `Visual items present but no recurring pattern detected across ${indices.length} items.`,
   };
 }
 
 function fallbackCulturalProfile(items: SavedItemV4[], indices: number[]): CulturalProfile {
   const patterns = countWeightedSignals(items, indices, i => [
     ...(i.visual_layer.cultural_signal ?? []),
-    ...(i.visual_layer.stylistic_signals ?? []).slice(0, 2),
-  ]);
+  ], 2); // only multi-item patterns
+  const confidence = profileConfidenceFromSignals(patterns);
   return {
-    summary_short: "Current saves suggest selective cultural interest. Heuristic fallback.",
+    summary_short: patterns.length
+      ? `Current saves suggest cultural interest in: ${patterns.slice(0, 2).map(p => p.label).join(", ")}.`
+      : `Current saves contain culturally-routed items but no recurring pattern detected.`,
     core_attraction: patterns.slice(0, 3).map(p => p.label),
     recurring_patterns: patterns.slice(0, 5),
     cultural_gravity: [],
     likely_likes_more_of: [],
-    likely_dislikes: [],
-    confidence: 0.3,
-    vector_ready_text: `Cultural signals: ${patterns.slice(0, 3).map(p => p.label).join(", ")}`,
+    likely_dislikes: [], // never populated by heuristic — requires real counter-evidence
+    confidence,
+    vector_ready_text: patterns.length
+      ? `Cultural signals: ${patterns.slice(0, 3).map(p => p.label).join(", ")}`
+      : `No recurring cultural patterns detected.`,
   };
 }
 
@@ -327,29 +367,48 @@ function fallbackPsychology(items: SavedItemV4[]): Omit<TastePsychologyV4, "guar
   const avgAuth = visualItems.reduce((s, i) => s + i.visual_layer.visual_authorship, 0) / Math.max(visualItems.length, 1);
   const visualIndices = visualItems.map(i => i.item_index);
 
-  const traits: TraitHypothesis[] = [
-    { trait: "openness_to_experience", label: "Openness to Experience",
-      estimated_level: parseFloat(Math.min(0.9, avgOddity + 0.1).toFixed(2)), confidence: 0.45,
-      evidence: ["Repeated saves from non-mainstream sources"], coverage_item_indices: visualIndices.slice(0, 4) },
-    { trait: "aesthetic_engagement", label: "Aesthetic Engagement",
-      estimated_level: parseFloat(Math.min(0.9, (avgAuth + visualItems.length / items.length) / 2).toFixed(2)), confidence: 0.5,
-      evidence: ["Significant fraction of saves appear visually driven"], coverage_item_indices: visualIndices.slice(0, 4) },
-    { trait: "independence_of_taste", label: "Independence of Taste",
-      estimated_level: parseFloat(Math.min(0.85, avgOddity).toFixed(2)), confidence: 0.4,
-      evidence: ["Pull toward non-generic sources observed"], coverage_item_indices: visualIndices.slice(0, 3) },
-  ];
+  const visualFraction = visualItems.length / items.length;
+  const traits: TraitHypothesis[] = [];
+  // Only add traits with real multi-item evidence
+  if (visualIndices.length >= 2) {
+    traits.push({
+      trait: "aesthetic_engagement", label: "Aesthetic Engagement",
+      estimated_level: parseFloat(Math.min(0.85, (avgAuth + visualFraction) / 2).toFixed(2)),
+      confidence: parseFloat(Math.min(0.65, visualFraction * 0.9).toFixed(2)),
+      evidence: [`${visualIndices.length} of ${items.length} saves appear visually driven`],
+      coverage_item_indices: visualIndices.slice(0, 4),
+    });
+  }
+  if (avgOddity > 0.4 && visualIndices.length >= 2) {
+    traits.push({
+      trait: "independence_of_taste", label: "Independence of Taste",
+      estimated_level: parseFloat(Math.min(0.8, avgOddity).toFixed(2)),
+      confidence: parseFloat(Math.min(0.55, avgOddity * 0.85).toFixed(2)),
+      evidence: ["Saves include non-mainstream visual references"],
+      coverage_item_indices: visualIndices.slice(0, 3),
+    });
+  }
 
   const personas: PersonaBlendEntry[] = [];
-  if (avgOddity > 0.5) personas.push({ persona: "niche_internet_curator", weight: parseFloat(Math.min(0.9, avgOddity + 0.1).toFixed(2)), description: "Pulls toward non-generic, signal-rich references." });
-  if (avgAuth > 0.5) personas.push({ persona: "authored_visual_selector", weight: parseFloat(Math.min(0.85, avgAuth).toFixed(2)), description: "Responds to visual authorship over template imagery." });
+  if (avgOddity > 0.5 && visualIndices.length >= 2) {
+    personas.push({ persona: "authored_visual_selector", weight: parseFloat(Math.min(0.85, avgOddity).toFixed(2)), description: `Saves show attraction to non-generic visual language across ${visualIndices.length} items.` });
+  }
   const utilityRatio = items.filter(i => i.profile_routing.affects_utility_profile).length / items.length;
-  if (utilityRatio > 0.2) personas.push({ persona: "tool_aware_researcher", weight: parseFloat(utilityRatio.toFixed(2)), description: "Also saves practical resources, not the core taste signal." });
+  if (utilityRatio > 0.25) {
+    personas.push({ persona: "mixed_curator", weight: parseFloat(utilityRatio.toFixed(2)), description: `${Math.round(utilityRatio * 100)}% of saves are utility-oriented; these are separate from aesthetic signals.` });
+  }
 
+  if (traits.length === 0 && personas.length === 0) return null;
+  const psychConf = traits.length > 0
+    ? parseFloat((traits.reduce((s, t) => s + t.confidence, 0) / traits.length).toFixed(2))
+    : 0.25;
   return {
     trait_hypotheses: traits,
     persona_blend: personas,
-    confidence: 0.4,
-    vector_ready_text: `Heuristic psychology: ${traits.map(t => `${t.label}=${t.estimated_level}`).join(", ")}`,
+    confidence: psychConf,
+    vector_ready_text: traits.length
+      ? `Heuristic tendencies (low confidence): ${traits.map(t => `${t.label}=${t.estimated_level.toFixed(2)}`).join(", ")}`
+      : "Insufficient evidence for psychological hypotheses.",
   };
 }
 
