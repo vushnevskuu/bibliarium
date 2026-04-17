@@ -105,6 +105,27 @@ export type SemanticLayer = {
 
 // ─── Taste interpretation ─────────────────────────────────────────────────────
 
+/** Whether the save is driven by creator canon, the page as graphic reference, both, or unclear */
+export type SaveAttractionSource = "creator_context" | "page_visual_execution" | "both" | "unclear";
+
+/**
+ * Separates attraction to a named figure vs the page’s visual execution (per-item, 0–1).
+ * Used so text-rich cultural pages do not outrank authored graphic portfolios in aggregation.
+ */
+export type SaveAttractionSignals = {
+  /** User likely cares about the named creator’s work / canon / reputation as such */
+  creator_signal_strength: number;
+  /** Landing / frame / site read as a graphic or typographic reference */
+  page_visual_signal_strength: number;
+  /** Cultural or design-industry weight of the proper name even from one save (e.g. known designer) */
+  named_entity_context_value: number;
+  /** Craft read: linework, layout, texture, authorship — independent of “whose name is in the title” */
+  visual_execution_value: number;
+  attraction_source: SaveAttractionSource;
+  /** Confidence in attraction_source only */
+  attraction_source_confidence: number;
+};
+
 export type TasteInterpretation = {
   should_affect_aesthetic_profile: boolean;
   should_affect_cultural_profile: boolean;
@@ -116,6 +137,8 @@ export type TasteInterpretation = {
   observable_evidence: string[];
   interpretation: string[];
   confidence: number;
+  /** Present on newly built items; absent on older cached profiles until rebuild */
+  attraction_signals?: SaveAttractionSignals;
 };
 
 // ─── Full item ────────────────────────────────────────────────────────────────

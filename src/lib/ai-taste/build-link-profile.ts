@@ -14,6 +14,8 @@ import type {
   PolishLevel,
   ProfileRouting,
   RelevanceScores,
+  SaveAttractionSignals,
+  SaveAttractionSource,
   SavedItemV4,
   SaveIntent,
   SaveIntentBlock,
@@ -96,6 +98,15 @@ CRITICAL — DO NOT:
 - Weight single-item themes as strong signals — keep them local to observable_evidence
 - If data is sparse: output less, not more; lower confidence instead of speculating
 
+NAMED FIGURE vs PAGE / EXECUTION (mandatory — taste_interpretation.attraction_signals):
+- Do NOT assume the named entity in the title is the primary attraction; many saves are for landing-page design, poster grammar, or a still — not fandom of the person.
+- creator_signal_strength: user likely cares about the named creator’s canon, biography, or collecting that figure (0–1).
+- page_visual_signal_strength: save is driven by the page/frame/site as a graphic, typographic, or compositional reference (0–1).
+- named_entity_context_value: how much cultural/design weight the proper name adds even in a single save (high for influential designers / studios; lower when the name is mainly headline bait on an editorial article).
+- visual_execution_value: craft read from VISUAL ANALYSIS independent of whose name appears in metadata (0–1).
+- attraction_source: which driver dominates — creator_context | page_visual_execution | both | unclear (never default to creator_context just because a name is easy to read).
+- attraction_source_confidence: 0–1, only for the source classification.
+
 OUTPUT valid JSON only:
 {
   "save_intent": {
@@ -134,7 +145,15 @@ OUTPUT valid JSON only:
     "save_reason": "1 sentence causal inference",
     "observable_evidence": ["2-3 directly observable facts"],
     "interpretation": ["0-2 specific, evidence-tethered inferences only"],
-    "confidence": 0.0
+    "confidence": 0.0,
+    "attraction_signals": {
+      "creator_signal_strength": 0.0,
+      "page_visual_signal_strength": 0.0,
+      "named_entity_context_value": 0.0,
+      "visual_execution_value": 0.0,
+      "attraction_source": "page_visual_execution",
+      "attraction_source_confidence": 0.0
+    }
   }
 }`;
 
@@ -143,7 +162,7 @@ interface LlmItemResult {
   relevance: RelevanceScores;
   profile_routing: ProfileRouting;
   semantic_layer: SemanticLayer;
-  taste_interpretation: TasteInterpretation;
+  taste_interpretation: TasteInterpretation & { attraction_signals?: Partial<SaveAttractionSignals> };
 }
 
 function buildContext(input: BuildLinkProfileInput): string {
@@ -176,6 +195,8 @@ function buildContext(input: BuildLinkProfileInput): string {
 }
 
 function cloneLlm(llm: LlmItemResult): LlmItemResult {
+  const ti = llm.taste_interpretation;
+  const { attraction_signals: _dropAttr, ...tiBase } = ti;
   return {
     ...llm,
     save_intent: { ...llm.save_intent, secondary: [...llm.save_intent.secondary] },
@@ -183,9 +204,9 @@ function cloneLlm(llm: LlmItemResult): LlmItemResult {
     profile_routing: { ...llm.profile_routing },
     semantic_layer: { ...llm.semantic_layer },
     taste_interpretation: {
-      ...llm.taste_interpretation,
-      observable_evidence: [...llm.taste_interpretation.observable_evidence],
-      interpretation: [...llm.taste_interpretation.interpretation],
+      ...tiBase,
+      observable_evidence: [...ti.observable_evidence],
+      interpretation: [...ti.interpretation],
     },
   };
 }
@@ -261,6 +282,122 @@ function computeVisualLanguageStrength(
   return Math.min(1, Math.max(0.06, x));
 }
 
+function clamp01(x: number): number {
+  return Math.min(1, Math.max(0, x));
+}
+
+function asAttractionScore(v: unknown, fallback: number): number {
+  return typeof v === "number" && !Number.isNaN(v) ? clamp01(v) : fallback;
+}
+
+function isSaveAttractionSource(s: unknown): s is SaveAttractionSource {
+  return s === "creator_context" || s === "page_visual_execution" || s === "both" || s === "unclear";
+}
+
+/** Heuristic split: named figure vs page execution (no LLM). */
+function computeAttractionHeuristic(input: BuildLinkProfileInput, vl: VisualLayer): SaveAttractionSignals {
+  const vs = computeVisualLanguageStrength(input, vl);
+  const execLen = (vl.graphic_execution_read ?? "").trim().length;
+  const visual_execution_value = clamp01(
+    0.42 * (vl.visual_authorship ?? 0) +
+      0.38 * Math.min(1, execLen / 100) +
+      0.2 * Math.min(1, vl.stylistic_signals.length / 5),
+  );
+  const page_visual_signal_strength = clamp01(
+    vs * 0.94 + (execLen >= 50 ? 0.06 : 0) + visual_execution_value * 0.08,
+  );
+
+  const title = input.title ?? "";
+  const path = normalizeUrlPath(input.url);
+  const textLen =
+    (input.description?.length ?? 0) + (input.extractedText?.length ?? 0) + title.length;
+  const bioish = /\b(interview|retrospective|profile|obituary|in\s+memoriam|tribute\s+to|filmmaker|director)\b/i.test(
+    `${title} ${(input.description ?? "").slice(0, 200)}`,
+  );
+  const looksNamedPair = /\b[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}\b/.test(title);
+  const portfolioSurface =
+    /\/(work|works|portfolio|projects|selected-work)\b/.test(path) ||
+    /(cargo\.site|readymag\.|behance\.net|dribbble\.com)/i.test(path);
+  const designPracticeTitle = /\b(design|graphic|illustration|studio|portfolio)\b/i.test(title);
+
+  let creator_signal_strength = 0.12;
+  let named_entity_context_value = 0.22;
+  if (looksNamedPair) named_entity_context_value = 0.52;
+  if (looksNamedPair && (portfolioSurface || designPracticeTitle)) {
+    creator_signal_strength = 0.58;
+    named_entity_context_value = Math.max(named_entity_context_value, 0.74);
+  } else if (looksNamedPair && bioish && textLen > 420) {
+    creator_signal_strength = 0.36;
+    named_entity_context_value = 0.48;
+  } else if (looksNamedPair) {
+    creator_signal_strength = 0.28;
+  }
+
+  if (bioish && textLen > 520 && page_visual_signal_strength >= 0.5) {
+    creator_signal_strength = Math.min(creator_signal_strength, 0.34);
+    named_entity_context_value = Math.min(named_entity_context_value, 0.44);
+  }
+
+  let attraction_source: SaveAttractionSource = "unclear";
+  let attraction_source_confidence = 0.32;
+  if (page_visual_signal_strength >= 0.54 && creator_signal_strength <= 0.36) {
+    attraction_source = "page_visual_execution";
+    attraction_source_confidence = clamp01(0.52 + page_visual_signal_strength * 0.22);
+  } else if (creator_signal_strength >= 0.52 && page_visual_signal_strength < 0.46) {
+    attraction_source = "creator_context";
+    attraction_source_confidence = clamp01(0.48 + creator_signal_strength * 0.2);
+  } else if (creator_signal_strength >= 0.4 && page_visual_signal_strength >= 0.48) {
+    attraction_source = "both";
+    attraction_source_confidence = 0.44;
+  }
+
+  return {
+    creator_signal_strength: clamp01(creator_signal_strength),
+    page_visual_signal_strength,
+    named_entity_context_value: clamp01(named_entity_context_value),
+    visual_execution_value,
+    attraction_source,
+    attraction_source_confidence: clamp01(attraction_source_confidence),
+  };
+}
+
+function finalizeAttractionSignals(
+  input: BuildLinkProfileInput,
+  vl: VisualLayer,
+  raw: Partial<SaveAttractionSignals> | null | undefined,
+): SaveAttractionSignals {
+  const h = computeAttractionHeuristic(input, vl);
+  if (!raw) return h;
+  const mix = (a: number, b: number) => clamp01(a * 0.42 + b * 0.58);
+  let out: SaveAttractionSignals = {
+    creator_signal_strength: mix(h.creator_signal_strength, asAttractionScore(raw.creator_signal_strength, h.creator_signal_strength)),
+    page_visual_signal_strength: mix(h.page_visual_signal_strength, asAttractionScore(raw.page_visual_signal_strength, h.page_visual_signal_strength)),
+    named_entity_context_value: mix(h.named_entity_context_value, asAttractionScore(raw.named_entity_context_value, h.named_entity_context_value)),
+    visual_execution_value: mix(h.visual_execution_value, asAttractionScore(raw.visual_execution_value, h.visual_execution_value)),
+    attraction_source: isSaveAttractionSource(raw.attraction_source) ? raw.attraction_source : h.attraction_source,
+    attraction_source_confidence: mix(h.attraction_source_confidence, asAttractionScore(raw.attraction_source_confidence, h.attraction_source_confidence)),
+  };
+  if (out.page_visual_signal_strength >= 0.56 && out.visual_execution_value >= 0.52) {
+    if (out.creator_signal_strength > out.page_visual_signal_strength - 0.05) {
+      out.creator_signal_strength = Math.min(out.creator_signal_strength, out.page_visual_signal_strength * 0.82);
+    }
+    if (out.creator_signal_strength < 0.38 && out.attraction_source === "creator_context") {
+      out.attraction_source = "page_visual_execution";
+    }
+  }
+  if (out.named_entity_context_value >= 0.64 && out.page_visual_signal_strength >= 0.54 && out.creator_signal_strength >= 0.34) {
+    out.attraction_source = "both";
+  }
+  return out;
+}
+
+function attachAttractionSignals(input: BuildLinkProfileInput, llm: LlmItemResult, vl: VisualLayer): LlmItemResult {
+  const out = cloneLlm(llm);
+  const raw = llm.taste_interpretation.attraction_signals;
+  out.taste_interpretation.attraction_signals = finalizeAttractionSignals(input, vl, raw);
+  return out;
+}
+
 function isTextHeavyCulturalPage(input: BuildLinkProfileInput, llm: LlmItemResult, vs: number): boolean {
   if (vs >= 0.48) return false;
   const textLen =
@@ -286,34 +423,40 @@ function applyVisualCulturalRebalance(
   vl: VisualLayer,
 ): LlmItemResult {
   const out = cloneLlm(llm);
+  const att = out.taste_interpretation.attraction_signals;
   const vs = computeVisualLanguageStrength(input, vl);
+  const vsEff = Math.max(vs, att?.page_visual_signal_strength ?? 0);
+  const execBlend = att
+    ? Math.max((vl.graphic_execution_read ?? "").trim().length / 100, att.visual_execution_value)
+    : (vl.graphic_execution_read ?? "").trim().length / 100;
   const it = (vl.image_type ?? "").toLowerCase().replace(/-/g, "_");
   const path = normalizeUrlPath(input.url);
   const portfolioGraphic =
-    vs >= 0.52 &&
+    (vsEff >= 0.52 || (att?.visual_execution_value ?? 0) >= 0.56) &&
     (
       /(illustration|graphic_design|collage|poster|pin_board|mixed|abstract)/.test(it) ||
       /\/(work|works|portfolio|projects|selected-work)\b/.test(path) ||
       (vl.visual_authorship ?? 0) >= 0.56 ||
-      (vl.graphic_execution_read ?? "").trim().length >= 42
+      execBlend >= 0.42
     );
 
   if (portfolioGraphic) {
+    const boost = vsEff * 0.24 + (att?.visual_execution_value ?? 0) * 0.08;
     out.taste_interpretation.weight_in_aesthetic_aggregation = parseFloat(
       Math.min(
         0.94,
-        Math.max(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.58 + vs * 0.24),
+        Math.max(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.58 + boost),
       ).toFixed(2),
     );
     out.relevance.visual_taste_relevance = parseFloat(
-      Math.min(0.96, Math.max(out.relevance.visual_taste_relevance, 0.58 + vs * 0.22)).toFixed(2),
+      Math.min(0.96, Math.max(out.relevance.visual_taste_relevance, 0.58 + vsEff * 0.2 + (att?.page_visual_signal_strength ?? 0) * 0.08)).toFixed(2),
     );
     out.profile_routing.affects_visual_profile = true;
     out.taste_interpretation.should_affect_aesthetic_profile = true;
     out.taste_interpretation.weight_in_cultural_aggregation = parseFloat(
       Math.min(out.taste_interpretation.weight_in_cultural_aggregation, 0.54).toFixed(2),
     );
-  } else if (isTextHeavyCulturalPage(input, out, vs)) {
+  } else if (isTextHeavyCulturalPage(input, out, vsEff)) {
     out.taste_interpretation.weight_in_cultural_aggregation = parseFloat(
       Math.min(out.taste_interpretation.weight_in_cultural_aggregation, 0.5).toFixed(2),
     );
@@ -321,11 +464,11 @@ function applyVisualCulturalRebalance(
       Math.min(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.38).toFixed(2),
     );
     out.relevance.visual_taste_relevance = parseFloat(
-      Math.min(out.relevance.visual_taste_relevance, Math.max(0.3, vs * 0.9)).toFixed(2),
+      Math.min(out.relevance.visual_taste_relevance, Math.max(0.3, vsEff * 0.9)).toFixed(2),
     );
   }
 
-  if (!portfolioGraphic && out.relevance.cultural_taste_relevance >= 0.68 && vs < 0.4) {
+  if (!portfolioGraphic && out.relevance.cultural_taste_relevance >= 0.68 && vsEff < 0.4) {
     out.taste_interpretation.weight_in_aesthetic_aggregation = parseFloat(
       Math.min(out.taste_interpretation.weight_in_aesthetic_aggregation, 0.36).toFixed(2),
     );
@@ -421,7 +564,7 @@ async function extractWithLlm(
   try {
     const res = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      max_tokens: 900,
+      max_tokens: 1100,
       temperature: 0.06,
       response_format: { type: "json_object" },
       messages: [
@@ -659,6 +802,12 @@ function buildVectorText(
   if (vl.visual_attraction_hypothesis) parts.push(`Visual attraction read: ${vl.visual_attraction_hypothesis}`);
   if (llm.taste_interpretation.interpretation.length) parts.push(`Interpretation: ${llm.taste_interpretation.interpretation.join(" ")}`);
   parts.push(`Aesthetic weight: ${llm.taste_interpretation.weight_in_aesthetic_aggregation.toFixed(2)}`);
+  const att = llm.taste_interpretation.attraction_signals;
+  if (att) {
+    parts.push(
+      `Attraction: source=${att.attraction_source}(${att.attraction_source_confidence.toFixed(2)}) creator_drv=${att.creator_signal_strength.toFixed(2)} page_visual_drv=${att.page_visual_signal_strength.toFixed(2)} named_ctx=${att.named_entity_context_value.toFixed(2)} exec=${att.visual_execution_value.toFixed(2)}`,
+    );
+  }
   return parts.filter(Boolean).join("; ");
 }
 
@@ -702,6 +851,32 @@ export type BuildLinkProfileInput = {
   userNote?: string | null;
 };
 
+/** Recompute or read cached per-item attraction split (for aggregation on old saves). */
+export function attractionSignalsForSavedItem(p: SavedItemV4): SaveAttractionSignals {
+  if (p.taste_interpretation.attraction_signals) return p.taste_interpretation.attraction_signals;
+  const summary = p.semantic_layer.short_summary ?? "";
+  const input: BuildLinkProfileInput = {
+    normalizedUrl: p.url,
+    url: p.url,
+    canonicalUrl: p.canonical_url,
+    title: p.title,
+    description: null,
+    domain: p.domain,
+    provider: p.source_kind,
+    previewType: p.content_format,
+    imageUrl: p.visual_layer.present ? "https://invalid.invalid/preview" : null,
+    faviconUrl: null,
+    siteName: null,
+    author: null,
+    publishedAt: null,
+    extractedText: summary.length > 140 ? summary : null,
+    visionDescription: null,
+    visualProfile: null,
+    userNote: null,
+  };
+  return finalizeAttractionSignals(input, p.visual_layer, null);
+}
+
 export async function buildLinkAiProfileAsync(
   input: BuildLinkProfileInput,
   apiKey?: string | null,
@@ -723,6 +898,7 @@ export async function buildLinkAiProfileAsync(
     input.visionDescription,
     input.url,
   );
+  llmResult = attachAttractionSignals(input, llmResult, visualLayer);
   llmResult = applyVisualCulturalRebalance(input, llmResult, visualLayer);
   const vectorText = buildVectorText(llmResult, visualLayer, input.title ?? null);
 
@@ -750,7 +926,7 @@ export function buildLinkAiProfile(input: BuildLinkProfileInput): SavedItemV4 {
   const vl = buildVisualLayer(Boolean(input.imageUrl), input.visualProfile, input.visionDescription, input.url);
   const llm = applyVisualCulturalRebalance(
     input,
-    applyUtilityVisualGuards(input, heuristicResult(input)),
+    attachAttractionSignals(input, applyUtilityVisualGuards(input, heuristicResult(input)), vl),
     vl,
   );
   return {

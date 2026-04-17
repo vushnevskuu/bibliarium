@@ -7,6 +7,7 @@
  */
 
 import OpenAI from "openai";
+import { attractionSignalsForSavedItem } from "./build-link-profile";
 import type {
   AiMasterProfile,
   CulturalProfile,
@@ -31,7 +32,7 @@ Prefer sparse, testable labels over narrative. If two labels would cluster toget
 
 const VISUAL_PROFILE_PROMPT = `Build a visual taste profile from these visual-routed items. Goal: discriminate this board from generic "design inspiration" noise — not to impress a reader.
 
-Each item line includes visual_language_strength (0–1): prioritize HIGH scores when inferring board-level recurring graphic patterns; do not let low-strength, text-forward editorial rows steer the visual profile.
+Each item line includes visual_language_strength (0–1) and Attraction: creator_drv / page_visual_drv / named_ctx / exec — prioritize rows where page_visual_execution or both drive the save when inferring recurring graphic patterns; do not let low page_visual_drv + low exec rows steer the profile just because a name is easy to verbalize.
 
 STRICT RULES:
 1. Prefix summary_short with "Current saves suggest..." — no "this person is/has/shows"
@@ -79,7 +80,7 @@ STRICT RULES:
 1. "Current saves suggest..." — never "this person is/has/tends to"
 2. core_attraction: only if 2+ items share a checkable theme. Else leave empty.
 3. recurring_patterns: 2+ DISTINCT indices per pattern; omit single-item "patterns"
-4. Long-form text or named cultural references alone are weaker evidence than repeated visual-language saves — do not let one verbose article outweigh several authored graphic items unless indices clearly support that pattern.
+4. Each serialized item includes Attraction: creator_drv, page_visual_drv, named_ctx, exec, and source — use them: recurring_patterns about a proper name require strong creator_drv across indices OR 3+ items; if page_visual_drv dominates, describe graphic/landing patterns instead of treating the headline name as the user’s core interest.
 5. Do not center recurring_patterns on a lone proper-named creator, film, or artwork unless 3+ DISTINCT evidence_item_indices clearly share that exact cluster; prefer era/movement/venue/channel language when evidence is thinner
 6. likely_dislikes: only with explicit counter-evidence across items; else []
 7. No deficits, limits, or psycho-moral reads
@@ -215,9 +216,23 @@ function labelIsProperNameOrBiographyCenter(label: string): boolean {
   return false;
 }
 
-function culturalCoreLooksLikeLoneFigure(s: string): boolean {
+function culturalCoreLooksLikeLoneFigure(s: string, items?: SavedItemV4[]): boolean {
   if (!labelIsProperNameOrBiographyCenter(s)) return false;
-  return !/\b(movement|wave|school|cinema|film|scene|era|collective|festival|label|gallery|arthouse|documentary)\b/i.test(s);
+  if (/\b(movement|wave|school|cinema|film|scene|era|collective|festival|label|gallery|arthouse|documentary)\b/i.test(s)) {
+    return false;
+  }
+  const first = s.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (
+    first.length > 2 &&
+    items?.some(p => {
+      const t = (p.title ?? "").toLowerCase();
+      if (!t.includes(first)) return false;
+      return attractionSignalsForSavedItem(p).named_entity_context_value >= 0.58;
+    })
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function isBannedWeakProfileLabel(label: string): boolean {
@@ -308,21 +323,41 @@ function filterSignalsAgainstTopicAndVagueness(
   });
 }
 
-function filterCulturalRecurringPatterns(patterns: EvidencedSignal[]): EvidencedSignal[] {
+function evidenceSupportsNamedCreatorCluster(p: EvidencedSignal, items: SavedItemV4[]): boolean {
+  if (!labelIsProperNameOrBiographyCenter(p.label)) return true;
+  const idx = Array.from(new Set(p.evidence_item_indices ?? [])).filter(i => items[i]);
+  if (idx.length >= 3) return true;
+  if (idx.length < 2) return false;
+  const picks = idx.map(i => items[i]!);
+  const avgCreator = picks.reduce((s, x) => s + attractionSignalsForSavedItem(x).creator_signal_strength, 0) / picks.length;
+  const avgPage = picks.reduce((s, x) => s + attractionSignalsForSavedItem(x).page_visual_signal_strength, 0) / picks.length;
+  if (avgCreator >= 0.48) return true;
+  if (avgCreator + 0.1 >= avgPage && avgCreator >= 0.38) return true;
+  return false;
+}
+
+function filterCulturalRecurringPatterns(
+  patterns: EvidencedSignal[],
+  items?: SavedItemV4[],
+): EvidencedSignal[] {
   return (patterns ?? []).filter(p => {
     const L = p.label;
     if (isVagueAggregateLabel(L)) return false;
     if (isBannedWeakProfileLabel(L)) return false;
     const uniq = new Set(p.evidence_item_indices ?? []).size;
-    if (labelIsProperNameOrBiographyCenter(L) && uniq < 3) return false;
+    if (labelIsProperNameOrBiographyCenter(L)) {
+      if (uniq >= 3) return true;
+      if (!items || uniq < 2) return false;
+      return evidenceSupportsNamedCreatorCluster(p, items);
+    }
     return true;
   });
 }
 
-function sanitizeCulturalProfile(cp: CulturalProfile): CulturalProfile {
-  const patterns = filterCulturalRecurringPatterns(cp.recurring_patterns ?? []);
+function sanitizeCulturalProfile(cp: CulturalProfile, items?: SavedItemV4[]): CulturalProfile {
+  const patterns = filterCulturalRecurringPatterns(cp.recurring_patterns ?? [], items);
   const core = (cp.core_attraction ?? []).filter(
-    s => !isBannedWeakProfileLabel(s) && !culturalCoreLooksLikeLoneFigure(s),
+    s => !isBannedWeakProfileLabel(s) && !culturalCoreLooksLikeLoneFigure(s, items),
   );
   return {
     ...cp,
@@ -388,8 +423,12 @@ function savedItemUrlPath(url: string): string {
   }
 }
 
-/** Same idea as per-link computeVisualLanguageStrength — up-weights portfolio / authored graphic rows in aggregation. */
-function visualLanguageStrengthFromSavedItem(p: SavedItemV4): number {
+function clamp01Master(x: number): number {
+  return Math.min(1, Math.max(0, x));
+}
+
+/** Raw visual signal from pixels/tokens only (ignores per-item attraction split). */
+function baseVisualLanguageStrengthFromSavedItem(p: SavedItemV4): number {
   const vl = p.visual_layer;
   if (!vl.present) return 0.06;
   let x =
@@ -408,14 +447,25 @@ function visualLanguageStrengthFromSavedItem(p: SavedItemV4): number {
   return Math.min(1, Math.max(0.06, x));
 }
 
+/** Blend pixel read with explicit attraction split (page vs creator). */
+function visualLanguageStrengthFromSavedItem(p: SavedItemV4): number {
+  const base = baseVisualLanguageStrengthFromSavedItem(p);
+  const att = attractionSignalsForSavedItem(p);
+  return clamp01Master(
+    base * 0.58 + att.page_visual_signal_strength * 0.28 + att.visual_execution_value * 0.14,
+  );
+}
+
 function serializeItemsForVisualAggregation(items: SavedItemV4[], indices: number[]): string {
   return indices.slice(0, 25).map(i => {
     const item = items[i];
     if (!item) return "";
     const vl = item.visual_layer;
     const vls = visualLanguageStrengthFromSavedItem(item);
+    const att = attractionSignalsForSavedItem(item);
     const parts = [
       `[${i}] domain=${item.domain} kind=${item.item_kind} intent=${item.save_intent.primary} aesthetic_weight=${item.taste_interpretation.weight_in_aesthetic_aggregation.toFixed(2)} visual_language_strength=${vls.toFixed(2)}`,
+      `  Attraction: source=${att.attraction_source} conf=${att.attraction_source_confidence.toFixed(2)} creator_drv=${att.creator_signal_strength.toFixed(2)} page_visual_drv=${att.page_visual_signal_strength.toFixed(2)} named_ctx=${att.named_entity_context_value.toFixed(2)} exec_val=${att.visual_execution_value.toFixed(2)}`,
       `  NOTE: infer recurring VISUAL LANGUAGE only — not product topics, materials ethics, or utility purpose.`,
       `  NOTE: aggregate SHARED graphic mechanics (linework, grain, crop, type, attitude, odd-but-controlled) — not a catalogue of proper names; one-off biographical references stay weak/single-item only.`,
     ];
@@ -500,6 +550,10 @@ function serializeItems(items: SavedItemV4[], indices: number[]): string {
     if (vl.present && vl.stylistic_signals.length) {
       parts.push(`  Visual tokens: ${vl.stylistic_signals.join(", ")}`);
     }
+    const att = attractionSignalsForSavedItem(item);
+    parts.push(
+      `  Attraction: source=${att.attraction_source} creator_drv=${att.creator_signal_strength.toFixed(2)} page_visual_drv=${att.page_visual_signal_strength.toFixed(2)} named_ctx=${att.named_entity_context_value.toFixed(2)} exec=${att.visual_execution_value.toFixed(2)}`,
+    );
     if (vl.emotional_tone?.length) {
       parts.push(`  Mood: ${vl.emotional_tone.join(", ")}`);
     }
@@ -553,7 +607,8 @@ function countWeightedSignals(
     const rawW = item.taste_interpretation.weight_in_aesthetic_aggregation ?? 0;
     const base = rawW > 0 ? rawW : (item.profile_routing.affects_visual_profile ? 0.22 : 0.06);
     const vls = visualLanguageStrengthFromSavedItem(item);
-    const weight = base * (0.68 + 0.52 * vls);
+    const att = attractionSignalsForSavedItem(item);
+    const weight = base * (0.68 + 0.52 * vls) * (0.7 + 0.38 * att.page_visual_signal_strength + 0.16 * att.visual_execution_value);
     for (const s of getSignals(item)) {
       if (!s || s.length < 3) continue;
       const e = map.get(s) ?? { score: 0, count: 0, idx: [] };
@@ -934,9 +989,9 @@ export async function buildMasterProfile(
         ? coerceAndSanitizeVisual(fallbackVisualProfile(profiles, visualIndicesStrict))
         : null;
     culturalProfile = cpRaw
-      ? sanitizeCulturalProfile(cpRaw)
+      ? sanitizeCulturalProfile(cpRaw, profiles)
       : culturalIndices.length
-        ? sanitizeCulturalProfile(fallbackCulturalProfile(profiles, culturalIndices))
+        ? sanitizeCulturalProfile(fallbackCulturalProfile(profiles, culturalIndices), profiles)
         : null;
     utilityProfile = upRaw ? { ...upRaw, should_not_contaminate_visual_profile: true as const } : (utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null);
     psychology = normalizePsychology(psRaw ?? fallbackPsychology(profiles), profiles.length);
@@ -961,7 +1016,7 @@ export async function buildMasterProfile(
       ? coerceAndSanitizeVisual(fallbackVisualProfile(profiles, visualIndicesStrict))
       : null;
     culturalProfile = culturalIndices.length
-      ? sanitizeCulturalProfile(fallbackCulturalProfile(profiles, culturalIndices))
+      ? sanitizeCulturalProfile(fallbackCulturalProfile(profiles, culturalIndices), profiles)
       : null;
     utilityProfile = utilityIndices.length ? fallbackUtilityProfile(profiles, utilityIndices) : null;
     psychology = normalizePsychology(fallbackPsychology(profiles), profiles.length);
