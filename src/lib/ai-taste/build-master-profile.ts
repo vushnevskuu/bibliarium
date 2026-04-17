@@ -12,7 +12,6 @@ import type {
   CulturalProfile,
   EvidencedSignal,
   MasterSummary,
-  PersonaBlendEntry,
   SaveBehaviorProfile,
   SavedItemV4,
   SaveIntent,
