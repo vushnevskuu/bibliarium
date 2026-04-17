@@ -14,6 +14,7 @@ import type {
   ItemTasteProfile,
   SourceKind,
   TasteRole,
+  VisualAnalysisProfile,
 } from "./types";
 
 // ─── Normalization helpers ────────────────────────────────────────────────────
@@ -115,7 +116,10 @@ interface LlmItemResult {
   confidence: number;
 }
 
-function buildLinkContext(input: BuildLinkProfileInput): string {
+function buildLinkContext(
+  input: BuildLinkProfileInput,
+  visualProfile?: VisualAnalysisProfile | null
+): string {
   const parts: string[] = [];
   parts.push(`URL: ${input.url}`);
   parts.push(`Domain: ${input.domain}`);
@@ -123,16 +127,37 @@ function buildLinkContext(input: BuildLinkProfileInput): string {
   if (input.siteName) parts.push(`Site name: ${input.siteName}`);
   if (input.description) parts.push(`Meta description: ${input.description.slice(0, 300)}`);
   if (input.extractedText) parts.push(`Page excerpt: ${input.extractedText.slice(0, 1200)}`);
-  if (input.visionDescription) parts.push(`Visual analysis: ${input.visionDescription}`);
   if (input.userNote) parts.push(`User's personal note: ${input.userNote}`);
+
+  // Rich structured visual analysis — much better than a string description
+  if (visualProfile) {
+    const v = visualProfile;
+    parts.push([
+      `VISUAL ANALYSIS:`,
+      `  Depicted: ${v.depicted}`,
+      `  Image type: ${v.image_type}`,
+      `  Composition: ${v.composition}`,
+      `  Color: ${v.color_profile.description} (${v.color_profile.dominant_hues.join(", ")}, ${v.color_profile.saturation}, ${v.color_profile.temperature})`,
+      v.materiality.length ? `  Materiality: ${v.materiality.join(", ")}` : "",
+      `  Stylistic signals: ${v.stylistic_signals.join(", ")}`,
+      `  Emotional tone: ${v.emotional_tone.join(", ")}`,
+      `  Authorship: ${v.authorship_signal}`,
+      `  Visual attraction: ${v.visual_attraction}`,
+      `  Visual novelty: ${v.visual_novelty.toFixed(2)}`,
+    ].filter(Boolean).join("\n"));
+  } else if (input.visionDescription) {
+    parts.push(`Visual description: ${input.visionDescription}`);
+  }
+
   return parts.join("\n");
 }
 
 async function extractItemWithLlm(
   input: BuildLinkProfileInput,
-  client: OpenAI
+  client: OpenAI,
+  visualProfile?: VisualAnalysisProfile | null
 ): Promise<LlmItemResult | null> {
-  const context = buildLinkContext(input);
+  const context = buildLinkContext(input, visualProfile);
   try {
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
@@ -236,23 +261,6 @@ function buildFallbackProfile(input: BuildLinkProfileInput): LlmItemResult {
   };
 }
 
-// ─── Vector-ready text generation ─────────────────────────────────────────────
-
-function buildVectorText(r: LlmItemResult, url: string, domain: string, title: string | null): string {
-  const parts: string[] = [];
-  if (title) parts.push(`ITEM: ${title}`);
-  parts.push(`WHAT: ${r.short_summary}`);
-  parts.push(`WHY SAVED: ${r.save_reason}`);
-  if (r.style_descriptors.length) parts.push(`STYLE: ${r.style_descriptors.join(", ")}`);
-  if (r.mood_descriptors.length) parts.push(`MOOD: ${r.mood_descriptors.join(", ")}`);
-  if (r.appeal_signals.visual.length) parts.push(`VISUAL: ${r.appeal_signals.visual.join("; ")}`);
-  if (r.appeal_signals.conceptual.length) parts.push(`CONCEPTUAL: ${r.appeal_signals.conceptual.join("; ")}`);
-  if (r.appeal_signals.emotional.length) parts.push(`EMOTIONAL: ${r.appeal_signals.emotional.join("; ")}`);
-  if (r.cultural_references.length) parts.push(`CULTURAL: ${r.cultural_references.join(", ")}`);
-  if (r.interpretation.length) parts.push(`INTERPRETATION: ${r.interpretation.join(" ")}`);
-  return parts.filter(Boolean).join("\n");
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export type BuildLinkProfileInput = {
@@ -271,9 +279,37 @@ export type BuildLinkProfileInput = {
   publishedAt: Date | null | undefined;
   extractedText: string | null | undefined;
   oEmbedAuthor?: string | null;
-  visionDescription?: string | null;
+  visionDescription?: string | null;           // legacy string fallback
+  visualProfile?: VisualAnalysisProfile | null; // rich structured visual analysis
   userNote?: string | null;
 };
+
+function buildVectorTextWithVisual(
+  r: LlmItemResult,
+  visualProfile: VisualAnalysisProfile | null | undefined,
+  title: string | null
+): string {
+  const parts: string[] = [];
+  if (title) parts.push(`ITEM: ${title}`);
+  parts.push(`WHAT: ${r.short_summary}`);
+  parts.push(`WHY SAVED: ${r.save_reason}`);
+  if (r.style_descriptors.length) parts.push(`STYLE: ${r.style_descriptors.join(", ")}`);
+  if (r.mood_descriptors.length) parts.push(`MOOD: ${r.mood_descriptors.join(", ")}`);
+  if (r.appeal_signals.visual.length) parts.push(`VISUAL APPEAL: ${r.appeal_signals.visual.join("; ")}`);
+  if (r.appeal_signals.conceptual.length) parts.push(`CONCEPTUAL: ${r.appeal_signals.conceptual.join("; ")}`);
+  if (r.appeal_signals.emotional.length) parts.push(`EMOTIONAL: ${r.appeal_signals.emotional.join("; ")}`);
+  if (r.cultural_references.length) parts.push(`CULTURAL: ${r.cultural_references.join(", ")}`);
+  if (r.interpretation.length) parts.push(`INTERPRETATION: ${r.interpretation.join(" ")}`);
+  // Enrich with structured visual signals
+  if (visualProfile) {
+    if (visualProfile.stylistic_signals.length) parts.push(`VISUAL STYLE: ${visualProfile.stylistic_signals.join(", ")}`);
+    if (visualProfile.emotional_tone.length) parts.push(`VISUAL MOOD: ${visualProfile.emotional_tone.join(", ")}`);
+    parts.push(`VISUAL ATTRACTION: ${visualProfile.visual_attraction}`);
+    if (visualProfile.materiality.length) parts.push(`MATERIALITY: ${visualProfile.materiality.join(", ")}`);
+    parts.push(`AUTHORSHIP: ${visualProfile.authorship_signal}`);
+  }
+  return parts.filter(Boolean).join("\n");
+}
 
 export async function buildLinkAiProfileAsync(
   input: BuildLinkProfileInput,
@@ -284,7 +320,7 @@ export async function buildLinkAiProfileAsync(
   const key = apiKey ?? process.env.OPENAI_API_KEY;
   if (key) {
     const client = new OpenAI({ apiKey: key });
-    result = await extractItemWithLlm(input, client);
+    result = await extractItemWithLlm(input, client, input.visualProfile);
   }
 
   if (!result) {
@@ -300,7 +336,7 @@ export async function buildLinkAiProfileAsync(
   result.appeal_signals.emotional = filterDescriptors(result.appeal_signals.emotional);
   result.appeal_signals.functional = filterDescriptors(result.appeal_signals.functional);
 
-  const vectorText = buildVectorText(result, input.url, input.domain, input.title ?? null);
+  const vectorText = buildVectorTextWithVisual(result, input.visualProfile, input.title ?? null);
 
   return {
     url: input.url,
@@ -320,6 +356,7 @@ export async function buildLinkAiProfileAsync(
     observable_evidence: result.observable_evidence,
     interpretation: result.interpretation,
     confidence: Math.max(0, Math.min(1, result.confidence)),
+    visual_analysis: input.visualProfile ?? null,
     vector_ready_text: vectorText,
   };
 }
@@ -328,7 +365,7 @@ export async function buildLinkAiProfileAsync(
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function buildLinkAiProfile(input: BuildLinkProfileInput): ItemTasteProfile {
   const result = buildFallbackProfile(input);
-  const vectorText = buildVectorText(result, input.url, input.domain, input.title ?? null);
+  const vectorText = buildVectorTextWithVisual(result, input.visualProfile, input.title ?? null);
   return {
     url: input.url,
     domain: input.domain,
@@ -347,6 +384,7 @@ export function buildLinkAiProfile(input: BuildLinkProfileInput): ItemTasteProfi
     observable_evidence: result.observable_evidence,
     interpretation: result.interpretation,
     confidence: result.confidence,
+    visual_analysis: input.visualProfile ?? null,
     vector_ready_text: vectorText,
   };
 }

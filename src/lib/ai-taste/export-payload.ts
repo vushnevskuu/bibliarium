@@ -141,6 +141,7 @@ export async function buildTasteExportForSlug(
   type MasterWithExtras = AiMasterProfile & {
     taste_summary?: TasteExportJson["taste_summary"];
     taste_psychology?: import("./types").TastePsychology | null;
+    visual_taste_summary?: import("./types").VisualTasteSummary | null;
   };
   const masterExt = master as MasterWithExtras;
 
@@ -186,6 +187,7 @@ export async function buildTasteExportForSlug(
     saved_items: profiles,
     taste_summary: tasteSummary,
     taste_psychology: masterExt.taste_psychology ?? null,
+    visual_taste_summary: masterExt.visual_taste_summary ?? null,
   };
 
   const json: TasteExportJson = {

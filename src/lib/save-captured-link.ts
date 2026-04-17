@@ -1,7 +1,8 @@
 import type { Link } from "@prisma/client";
 import { buildLinkAiProfileAsync } from "@/lib/ai-taste/build-link-profile";
 import { extractMainTextFromUrl } from "@/lib/ai-taste/extract-main-text";
-import { analyzeImageForTaste, summarizeTranscript } from "@/lib/ai-taste/analyze-image";
+import { analyzeImageStructured, analyzeImageForTaste, summarizeTranscript } from "@/lib/ai-taste/analyze-image";
+import type { VisualAnalysisProfile } from "@/lib/ai-taste/types";
 import { fetchYouTubeTranscript } from "@/lib/ai-taste/fetch-youtube-transcript";
 import { prisma } from "@/lib/prisma";
 import { resolvePreview } from "@/lib/preview-resolver";
@@ -139,13 +140,21 @@ export async function saveCapturedLinkForUser(
       ? preview.oEmbedJson.author_name
       : null;
 
-  // Vision analysis — parallel with transcript, don't block on failure
+  // Visual analysis — structured for images, transcript summary for video
   let visionDescription: string | null = null;
+  let visualProfile: VisualAnalysisProfile | null = null;
+
   if (preview.imageUrl) {
     if (preview.provider === "youtube" && extractedText) {
+      // For YouTube, summarize transcript (thumbnail analysis is low signal)
       visionDescription = await summarizeTranscript(extractedText, openaiApiKey);
     } else {
-      visionDescription = await analyzeImageForTaste(preview.imageUrl, openaiApiKey);
+      // Structured visual analysis — richer than string
+      visualProfile = await analyzeImageStructured(preview.imageUrl, openaiApiKey);
+      if (!visualProfile) {
+        // Fallback to legacy string if structured fails
+        visionDescription = await analyzeImageForTaste(preview.imageUrl, openaiApiKey);
+      }
     }
   }
 
@@ -167,6 +176,7 @@ export async function saveCapturedLinkForUser(
       extractedText,
       oEmbedAuthor: oa,
       visionDescription,
+      visualProfile,
       userNote: note?.trim() || null,
     },
     openaiApiKey

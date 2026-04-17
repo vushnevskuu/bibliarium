@@ -54,6 +54,110 @@ export type TasteRole =
   | "mood-capture";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// VISUAL ANALYSIS — per-item structured image profile
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ImageType =
+  | "photograph"
+  | "illustration"
+  | "screenshot"
+  | "graphic-design"
+  | "collage"
+  | "product-photo"
+  | "poster"
+  | "ui-screenshot"
+  | "video-thumbnail"
+  | "pin-board"
+  | "text-image"
+  | "abstract"
+  | "mixed"
+  | "unknown";
+
+export type VisualAnalysisProfile = {
+  image_type: ImageType;
+
+  /** Compositional structure: e.g. "centered subject on clean background", "grid-based layout" */
+  composition: string;
+
+  /** Dominant palette and lighting quality */
+  color_profile: {
+    dominant_hues: string[];    // e.g. ["muted earth tones", "off-white", "deep navy"]
+    saturation: "desaturated" | "muted" | "moderate" | "saturated" | "hyper-saturated";
+    brightness: "dark" | "dim" | "balanced" | "bright" | "high-key";
+    temperature: "warm" | "neutral" | "cool" | "mixed";
+    description: string;        // 1 sentence
+  };
+
+  /** Physical or tactile quality suggested by the image */
+  materiality: string[];        // e.g. ["concrete", "worn paper", "soft cotton", "raw metal"]
+
+  /**
+   * Aesthetic/stylistic signals — the key taste vocabulary.
+   * Use specific terms from this vocabulary when applicable:
+   * found-object | editorial | internet-native | lo-fi | subcultural |
+   * art-house | industrial | graphic | tactile | archive-like | authored |
+   * non-template | institutional | brutalist | organic | decorative |
+   * maximalist | minimal | vernacular | aspirational | anti-aesthetic |
+   * cinematic | printed-matter | collaged | referential | pop | flat
+   */
+  stylistic_signals: string[];
+
+  /** Mood/emotional atmosphere conveyed by the image */
+  emotional_tone: string[];     // e.g. ["quiet melancholy", "sharp clarity", "warm nostalgia"]
+
+  /**
+   * Whether the image feels authored/intentional vs. generic/template:
+   * "strongly authored" | "authored" | "neutral" | "template-like" | "algorithmic"
+   */
+  authorship_signal: string;
+
+  /**
+   * How surprising/non-generic this image feels in context of mainstream saves:
+   * 0.0 = completely generic, 1.0 = highly distinctive/unusual
+   */
+  visual_novelty: number;
+
+  /** What is depicted — factual layer */
+  depicted: string;             // 1 sentence: what you see
+
+  /** Why this visual might attract the saver — inferred aesthetic pull */
+  visual_attraction: string;    // 1 sentence: what aesthetic quality draws attention
+
+  confidence: number;           // 0.0–1.0
+};
+
+// Profile-level visual taste aggregation
+export type VisualPreferenceAxes = {
+  raw_vs_refined: number;       // -1 raw/unpolished ↔ +1 highly refined
+  sparse_vs_dense: number;      // -1 minimal/sparse ↔ +1 dense/layered
+  warm_vs_cool: number;         // -1 warm ↔ +1 cool
+  analog_vs_digital: number;    // -1 film/print/analog ↔ +1 screen-native/digital
+  authored_vs_generic: number;  // -1 template/generic ↔ +1 strongly authored
+  dark_vs_bright: number;       // -1 dark/moody ↔ +1 bright/clean
+};
+
+export type VisualTasteCluster = {
+  label: string;
+  description: string;
+  stylistic_signals: string[];
+  evidence_item_indices: number[];
+  strength: number;             // 0.0–1.0
+};
+
+export type VisualTasteSummary = {
+  /** Most recurrent stylistic signals across high-confidence visual items */
+  recurring_visual_signals: { signal: string; count: number; item_indices: number[] }[];
+  visual_preference_axes: VisualPreferenceAxes;
+  repeated_moods: string[];
+  dominant_color_tendencies: string[];
+  authorship_tendency: string;  // e.g. "strong preference for authored/non-template visuals"
+  visual_taste_clusters: VisualTasteCluster[];
+  /** Items with no/low-quality visuals — excluded from visual analysis */
+  visual_coverage: number;      // fraction of items that had analyzable images
+  confidence: number;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // LAYER 2 — ITEM-LEVEL TASTE INTERPRETATION
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -104,7 +208,10 @@ export type ItemTasteProfile = {
   interpretation: string[];
   confidence: number;  // 0.0–1.0
 
-  // Embedding-ready
+  // Visual analysis — null if no image available or analysis failed
+  visual_analysis: VisualAnalysisProfile | null;
+
+  // Embedding-ready (includes visual signals when available)
   vector_ready_text: string;
 };
 
@@ -245,6 +352,8 @@ export type TasteDossierV2 = {
   };
   saved_items: ItemTasteProfile[];
   taste_summary: TasteProfileSummary;
+  /** Aggregated visual language analysis across all items with images */
+  visual_taste_summary: VisualTasteSummary | null;
   /** Non-clinical cognitive/aesthetic style hypotheses. Null if insufficient data (<4 items). */
   taste_psychology: TastePsychology | null;
 };

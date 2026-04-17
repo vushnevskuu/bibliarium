@@ -1,9 +1,12 @@
 /**
- * Vision analysis and transcript summarization via OpenAI.
- * These run at link-save time and feed into the taste pipeline.
+ * Visual analysis via OpenAI Vision + transcript summarization.
+ *
+ * analyzeImageStructured — returns VisualAnalysisProfile (structured JSON)
+ * summarizeTranscript — returns plain string summary for YouTube
  */
 
 import OpenAI from "openai";
+import type { VisualAnalysisProfile } from "./types";
 
 function getClient(userApiKey?: string | null): OpenAI | null {
   const key = userApiKey || process.env.OPENAI_API_KEY;
@@ -11,43 +14,103 @@ function getClient(userApiKey?: string | null): OpenAI | null {
   return new OpenAI({ apiKey: key });
 }
 
-const VISION_PROMPT = `Describe this image in 2-4 sentences focused on:
-1. What is depicted (objects, scenes, environments)
-2. Visual aesthetic and style (e.g. minimalist, maximalist, brutalist, organic, editorial)
-3. Color palette and lighting mood
-4. If it is design/UI: layout philosophy, typography, interaction patterns
+// ─────────────────────────────────────────────────────────────────────────────
+// Structured visual extraction
+// ─────────────────────────────────────────────────────────────────────────────
 
-Be specific and vocabulary-rich. Focus on aesthetic signals useful for understanding the saver's taste.
-Do not mention the platform it came from.`;
+const VISUAL_EXTRACTION_PROMPT = `You are analyzing an image saved to a personal taste board.
+Your job is NOT to label objects. Your job is to extract the aesthetic and visual language of the image
+as a structured taste signal.
 
-export async function analyzeImageForTaste(
+RULES:
+- Prioritize aesthetic properties over object labels
+- Use specific vocabulary: found-object, editorial, internet-native, lo-fi, subcultural,
+  art-house, industrial, graphic, tactile, archive-like, authored, non-template,
+  institutional, brutalist, organic, decorative, maximalist, minimal, vernacular,
+  aspirational, anti-aesthetic, cinematic, printed-matter, collaged, referential, pop, flat
+- Be specific about color — not just "warm" but "muted amber and bone white with deep shadow"
+- Distinguish composition carefully — "centered subject on empty ground" differs from "layered collage"
+- authorship_signal must be honest — most images are NOT "strongly authored"
+- visual_novelty: 0.0 = completely generic, 1.0 = highly unusual. Be conservative.
+- confidence: how confident you are in this analysis. 0.3 for unclear images.
+
+OUTPUT: valid JSON only, no markdown:
+{
+  "image_type": "photograph|illustration|screenshot|graphic-design|collage|product-photo|poster|ui-screenshot|video-thumbnail|pin-board|text-image|abstract|mixed|unknown",
+  "composition": "1 sentence describing spatial structure",
+  "color_profile": {
+    "dominant_hues": ["2-4 specific hue descriptions"],
+    "saturation": "desaturated|muted|moderate|saturated|hyper-saturated",
+    "brightness": "dark|dim|balanced|bright|high-key",
+    "temperature": "warm|neutral|cool|mixed",
+    "description": "1 sentence on color mood"
+  },
+  "materiality": ["0-4 physical/tactile qualities suggested by the image"],
+  "stylistic_signals": ["3-6 aesthetic vocabulary terms from the list above"],
+  "emotional_tone": ["2-3 mood descriptors"],
+  "authorship_signal": "strongly authored|authored|neutral|template-like|algorithmic",
+  "visual_novelty": 0.0,
+  "depicted": "1 sentence: what is shown",
+  "visual_attraction": "1 sentence: what aesthetic quality might attract a person with taste",
+  "confidence": 0.0
+}`;
+
+export async function analyzeImageStructured(
   imageUrl: string,
   userApiKey?: string | null
-): Promise<string | null> {
+): Promise<VisualAnalysisProfile | null> {
   const client = getClient(userApiKey);
   if (!client) return null;
   try {
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      max_tokens: 250,
+      max_tokens: 500,
+      temperature: 0.1,
+      response_format: { type: "json_object" },
       messages: [
         {
           role: "user",
           content: [
-            { type: "text", text: VISION_PROMPT },
+            { type: "text", text: VISUAL_EXTRACTION_PROMPT },
             { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
           ],
         },
       ],
     });
-    return response.choices[0]?.message?.content?.trim() ?? null;
+    const raw = response.choices[0]?.message?.content;
+    if (!raw) return null;
+    return JSON.parse(raw) as VisualAnalysisProfile;
   } catch {
     return null;
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Legacy string-based vision (kept for backward compat in save-captured-link)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function analyzeImageForTaste(
+  imageUrl: string,
+  userApiKey?: string | null
+): Promise<string | null> {
+  const result = await analyzeImageStructured(imageUrl, userApiKey);
+  if (!result) return null;
+  // Flatten to string for legacy text-based pipeline
+  return [
+    result.depicted,
+    result.visual_attraction,
+    result.stylistic_signals.join(", "),
+    result.emotional_tone.join(", "),
+    result.color_profile.description,
+  ].filter(Boolean).join(". ");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// YouTube transcript summarization
+// ─────────────────────────────────────────────────────────────────────────────
+
 const TRANSCRIPT_PROMPT = `Summarize this video transcript in 2-3 sentences for a taste profile.
-Focus on: main topic, tone and style of the creator, key ideas, and what kind of audience sensibility it addresses.
+Focus on: main topic, tone and style of the creator, key ideas, what kind of audience sensibility it addresses.
 Be specific, avoid generic phrases.
 
 Transcript:`;
@@ -71,5 +134,3 @@ export async function summarizeTranscript(
     return null;
   }
 }
-
-// generateTasteSummary removed — LLM aggregation now lives in build-master-profile.ts

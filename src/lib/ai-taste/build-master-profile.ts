@@ -16,6 +16,9 @@ import type {
   ItemTasteProfile,
   ProfileAestheticAxes,
   TastePsychology,
+  VisualAnalysisProfile,
+  VisualTasteSummary,
+  VisualTasteCluster,
 } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -314,6 +317,147 @@ function buildFallbackProfile(items: ItemTasteProfile[]): LlmProfileResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Visual taste aggregation
+// ─────────────────────────────────────────────────────────────────────────────
+
+function aggregateVisualTaste(
+  items: ItemTasteProfile[]
+): VisualTasteSummary | null {
+  const visualItems = items
+    .map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => item.visual_analysis !== null && (item.visual_analysis?.confidence ?? 0) >= 0.3);
+
+  if (visualItems.length < 2) return null;
+
+  const coverage = visualItems.length / items.length;
+
+  // Count stylistic signals weighted by confidence
+  const signalMap = new Map<string, { count: number; score: number; indices: number[] }>();
+  const moodMap = new Map<string, { count: number; indices: number[] }>();
+  const colorMap = new Map<string, number>();
+  const authorshipCounts = new Map<string, number>();
+
+  for (const { item, idx } of visualItems) {
+    const v = item.visual_analysis as VisualAnalysisProfile;
+    const conf = v.confidence;
+
+    for (const signal of v.stylistic_signals) {
+      const e = signalMap.get(signal) ?? { count: 0, score: 0, indices: [] };
+      e.count++;
+      e.score += conf;
+      e.indices.push(idx);
+      signalMap.set(signal, e);
+    }
+    for (const mood of v.emotional_tone) {
+      const e = moodMap.get(mood) ?? { count: 0, indices: [] };
+      e.count++;
+      e.indices.push(idx);
+      moodMap.set(mood, e);
+    }
+    for (const hue of v.color_profile.dominant_hues) {
+      colorMap.set(hue, (colorMap.get(hue) ?? 0) + 1);
+    }
+    authorshipCounts.set(v.authorship_signal, (authorshipCounts.get(v.authorship_signal) ?? 0) + 1);
+  }
+
+  // Top recurring signals
+  const recurringSignals = Array.from(signalMap.entries())
+    .sort((a, b) => b[1].score - a[1].score)
+    .slice(0, 10)
+    .map(([signal, e]) => ({
+      signal,
+      count: e.count,
+      item_indices: e.indices,
+    }));
+
+  // Top moods
+  const repeatedMoods = Array.from(moodMap.entries())
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 5)
+    .map(([mood]) => mood);
+
+  // Top color tendencies
+  const dominantColors = Array.from(colorMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([hue]) => hue);
+
+  // Authorship tendency
+  const topAuthorship = Array.from(authorshipCounts.entries())
+    .sort((a, b) => b[1] - a[1])[0]?.[0] ?? "neutral";
+  const authoredCount = (authorshipCounts.get("strongly authored") ?? 0) + (authorshipCounts.get("authored") ?? 0);
+  const genericCount = (authorshipCounts.get("template-like") ?? 0) + (authorshipCounts.get("algorithmic") ?? 0);
+  const authorshipTendency = authoredCount > genericCount * 1.5
+    ? "strong preference for authored/non-template visuals"
+    : genericCount > authoredCount * 1.5
+      ? "tendency toward template/generic visuals"
+      : `mixed authorship tendency (top: ${topAuthorship})`;
+
+  // Visual preference axes from aesthetic_axes aggregation
+  const avgAxis = (key: keyof ItemTasteProfile["aesthetic_axes"]) => {
+    const vals = visualItems.map(({ item }) => item.aesthetic_axes[key]).filter(v => v !== 0);
+    return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  };
+  const visualAxes = {
+    raw_vs_refined: avgAxis("raw_vs_polished"),
+    sparse_vs_dense: avgAxis("minimal_vs_dense"),
+    warm_vs_cool: avgAxis("warm_vs_cold"),
+    analog_vs_digital: avgAxis("analog_vs_digital"),
+    authored_vs_generic: authoredCount > 0 ? (authoredCount - genericCount) / Math.max(authoredCount + genericCount, 1) : 0,
+    dark_vs_bright: 0, // not tracked in item axes, neutral
+  };
+
+  // Taste-based visual clusters from top signal combinations
+  const clusters: VisualTasteCluster[] = [];
+  const topSignals = recurringSignals.slice(0, 6);
+  if (topSignals.length >= 2) {
+    // Group by items that share 2+ signals
+    const itemSignalSets = new Map<number, string[]>();
+    for (const { signal, item_indices } of topSignals) {
+      for (const idx of item_indices) {
+        const s = itemSignalSets.get(idx) ?? [];
+        s.push(signal);
+        itemSignalSets.set(idx, s);
+      }
+    }
+    // Find dense signal combinations
+    const signalPairMap = new Map<string, { signals: string[]; indices: number[] }>();
+    for (const [idx, signals] of Array.from(itemSignalSets.entries())) {
+      if (signals.length >= 2) {
+        const key = signals.slice(0, 2).sort().join("+");
+        const e = signalPairMap.get(key) ?? { signals: signals.slice(0, 2), indices: [] };
+        e.indices.push(idx);
+        signalPairMap.set(key, e);
+      }
+    }
+    for (const [, { signals, indices }] of Array.from(signalPairMap.entries())) {
+      if (indices.length >= 2) {
+        clusters.push({
+          label: signals.join(" / "),
+          description: `Visual cluster: repeated co-occurrence of ${signals.join(" and ")} across ${indices.length} items`,
+          stylistic_signals: signals,
+          evidence_item_indices: indices,
+          strength: indices.length / visualItems.length,
+        });
+      }
+    }
+  }
+
+  const avgConf = visualItems.reduce((s, { item }) => s + (item.visual_analysis?.confidence ?? 0), 0) / visualItems.length;
+
+  return {
+    recurring_visual_signals: recurringSignals,
+    visual_preference_axes: visualAxes,
+    repeated_moods: repeatedMoods,
+    dominant_color_tendencies: dominantColors,
+    authorship_tendency: authorshipTendency,
+    visual_taste_clusters: clusters.sort((a, b) => b.strength - a.strength).slice(0, 5),
+    visual_coverage: coverage,
+    confidence: avgConf,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -339,6 +483,9 @@ export async function buildMasterProfile(
   if (!profileResult) {
     profileResult = buildFallbackProfile(profiles);
   }
+
+  // Visual aggregation is deterministic — no LLM needed
+  const visualTasteSummary = aggregateVisualTaste(profiles);
 
   const tasteSummary: import("./types").TasteProfileSummary = {
     strong_signals: profileResult.strong_signals ?? [],
@@ -405,7 +552,7 @@ export async function buildMasterProfile(
     ].filter(Boolean).join("\n"),
     saved_items: profiles as AiMasterProfile["saved_items"],
     // Carry new structures for export-payload
-    ...(({ taste_summary: tasteSummary, taste_psychology: tastePsychology } as object)),
+    ...(({ taste_summary: tasteSummary, taste_psychology: tastePsychology, visual_taste_summary: visualTasteSummary } as object)),
   } as AiMasterProfile;
 }
 
@@ -420,6 +567,7 @@ export function masterProfileToMarkdown(
 ): string {
   const ts = (m as unknown as { taste_summary?: import("./types").TasteProfileSummary }).taste_summary;
   const tp = (m as unknown as { taste_psychology?: TastePsychology | null }).taste_psychology;
+  const vt = (m as unknown as { visual_taste_summary?: VisualTasteSummary | null }).visual_taste_summary;
 
   const lines: string[] = [
     `# Taste dossier — ${m.user_slug}`,
@@ -502,6 +650,44 @@ export function masterProfileToMarkdown(
     if (tp.synthesis) {
       lines.push(`### Synthesis`, ``, tp.synthesis, ``);
     }
+  }
+
+  if (vt && vt.recurring_visual_signals.length > 0) {
+    lines.push(
+      `## Visual taste language`,
+      ``,
+      `_Coverage: ${(vt.visual_coverage * 100).toFixed(0)}% of items analyzed | Confidence: ${vt.confidence.toFixed(2)}_`,
+      ``,
+    );
+    lines.push(`### Recurring visual signals`);
+    for (const s of vt.recurring_visual_signals.slice(0, 8)) {
+      lines.push(`- **${s.signal}** (${s.count}× across items [${s.item_indices.join(",")}])`);
+    }
+    lines.push(``);
+    if (vt.repeated_moods.length) {
+      lines.push(`### Repeated visual moods`, ...vt.repeated_moods.map(m => `- ${m}`), ``);
+    }
+    if (vt.dominant_color_tendencies.length) {
+      lines.push(`### Dominant color tendencies`, ...vt.dominant_color_tendencies.map(c => `- ${c}`), ``);
+    }
+    lines.push(`### Authorship tendency`, ``, vt.authorship_tendency, ``);
+    if (vt.visual_taste_clusters.length) {
+      lines.push(`### Visual clusters`);
+      for (const c of vt.visual_taste_clusters) {
+        lines.push(`- **${c.label}** (${(c.strength * 100).toFixed(0)}%) — ${c.description} [${c.evidence_item_indices.join(",")}]`);
+      }
+      lines.push(``);
+    }
+    lines.push(`### Visual preference axes`);
+    const axes = vt.visual_preference_axes;
+    lines.push(
+      `- raw_vs_refined: ${axes.raw_vs_refined.toFixed(2)}`,
+      `- authored_vs_generic: ${axes.authored_vs_generic.toFixed(2)}`,
+      `- sparse_vs_dense: ${axes.sparse_vs_dense.toFixed(2)}`,
+      `- warm_vs_cool: ${axes.warm_vs_cool.toFixed(2)}`,
+      `- analog_vs_digital: ${axes.analog_vs_digital.toFixed(2)}`,
+      ``,
+    );
   }
 
   lines.push(`---`, `_See JSON export for full machine-readable item profiles with vector_ready_text._`);
