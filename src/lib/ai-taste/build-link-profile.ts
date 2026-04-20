@@ -196,7 +196,8 @@ function buildContext(input: BuildLinkProfileInput): string {
 
 function cloneLlm(llm: LlmItemResult): LlmItemResult {
   const ti = llm.taste_interpretation;
-  const { attraction_signals: _dropAttr, ...tiBase } = ti;
+  const { attraction_signals, ...tiBase } = ti;
+  void attraction_signals;
   return {
     ...llm,
     save_intent: { ...llm.save_intent, secondary: [...llm.save_intent.secondary] },
@@ -369,7 +370,7 @@ function finalizeAttractionSignals(
   const h = computeAttractionHeuristic(input, vl);
   if (!raw) return h;
   const mix = (a: number, b: number) => clamp01(a * 0.42 + b * 0.58);
-  let out: SaveAttractionSignals = {
+  const out: SaveAttractionSignals = {
     creator_signal_strength: mix(h.creator_signal_strength, asAttractionScore(raw.creator_signal_strength, h.creator_signal_strength)),
     page_visual_signal_strength: mix(h.page_visual_signal_strength, asAttractionScore(raw.page_visual_signal_strength, h.page_visual_signal_strength)),
     named_entity_context_value: mix(h.named_entity_context_value, asAttractionScore(raw.named_entity_context_value, h.named_entity_context_value)),
