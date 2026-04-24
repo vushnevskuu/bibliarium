@@ -64,3 +64,16 @@ export const extensionRefreshBodySchema = z.object({
 export const createCollectionBodySchema = z.object({
   name: z.string().trim().min(1).max(80),
 });
+
+export const clipboardPasteBodySchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("text"),
+    text: z.string().min(1).max(50_000),
+    collectionId: z.string().min(1).optional().nullable(),
+  }),
+  z.object({
+    kind: z.literal("image"),
+    dataUrl: z.string().min(1).max(6_000_000),
+    collectionId: z.string().min(1).optional().nullable(),
+  }),
+]);

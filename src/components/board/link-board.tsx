@@ -100,6 +100,14 @@ async function parseError(res: Response): Promise<string> {
   return `Request failed (${res.status})`;
 }
 
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(r.error ?? new Error("read failed"));
+    r.readAsDataURL(file);
+  });
+}
 
 function shuffleInPlace<T>(items: T[]): T[] {
   const a = [...items];
@@ -281,11 +289,81 @@ export function LinkBoard({
     }
   };
 
-  // Ctrl+V / Cmd+V anywhere on the page — paste URL directly without opening the add form
+  const postClipboard = React.useCallback(
+    async (payload: { kind: "text"; text: string } | { kind: "image"; dataUrl: string }) => {
+      setError(null);
+      setBusy(true);
+      setSkeletonCount(1);
+
+      const run = () =>
+        fetch("/api/clipboard", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, collectionId: null }),
+        });
+
+      try {
+        let res: Response;
+        try {
+          res = await run();
+        } catch {
+          await new Promise((r) => setTimeout(r, 600));
+          res = await run();
+        }
+
+        const data = (await res.json()) as {
+          error?: string;
+          link?: LinkSerialized;
+        };
+
+        if (res.status === 401) {
+          window.location.href = "/auth/signin?next=/board";
+          return;
+        }
+        if (!res.ok) {
+          setError(data.error || (await parseError(res)));
+          return;
+        }
+
+        if (data.link) {
+          setLinks((prev) => {
+            if (prev.some((x) => x.id === data.link!.id)) return prev;
+            if (prev.some((x) => x.normalizedUrl === data.link!.normalizedUrl)) {
+              return prev.map((x) =>
+                x.normalizedUrl === data.link!.normalizedUrl ? data.link! : x
+              );
+            }
+            return [data.link!, ...prev];
+          });
+        }
+      } catch (e) {
+        const raw = e instanceof Error ? e.message : "Something went wrong";
+        setError(
+          raw === "Failed to fetch"
+            ? "Не удалось связаться с сервером. Запусти `npm run dev` и открой http://127.0.0.1:3333 (порт зафиксирован). После сохранения файлов Next иногда рвёт долгий запрос — попробуй вставить ещё раз."
+            : raw
+        );
+      } finally {
+        setBusy(false);
+        setSkeletonCount(0);
+      }
+    },
+    []
+  );
+
+  // Ctrl+V / Cmd+V anywhere on the page — paste URL, plain text, or image (e.g. screenshot) without opening the add form
   const onSubmitRef = React.useRef(onSubmit);
-  React.useLayoutEffect(() => { onSubmitRef.current = onSubmit; });
+  React.useLayoutEffect(() => {
+    onSubmitRef.current = onSubmit;
+  });
+  const postClipboardRef = React.useRef(postClipboard);
+  React.useLayoutEffect(() => {
+    postClipboardRef.current = postClipboard;
+  });
   const busyRef = React.useRef(busy);
-  React.useLayoutEffect(() => { busyRef.current = busy; }, [busy]);
+  React.useLayoutEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
 
   React.useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
@@ -299,14 +377,51 @@ export function LinkBoard({
 
       if (busyRef.current) return;
 
-      const text = (e.clipboardData?.getData("text") ?? "").trim();
+      const cd = e.clipboardData;
+      if (!cd) return;
+
+      const pickImageFile = (): File | null => {
+        for (const f of Array.from(cd.files ?? [])) {
+          if (f.type.startsWith("image/")) return f;
+        }
+        if (cd.items) {
+          for (let i = 0; i < cd.items.length; i++) {
+            const it = cd.items[i];
+            if (it.kind === "file" && it.type.startsWith("image/")) {
+              const f = it.getAsFile();
+              if (f) return f;
+            }
+          }
+        }
+        return null;
+      };
+
+      const imageFile = pickImageFile();
+      if (imageFile) {
+        e.preventDefault();
+        void (async () => {
+          try {
+            const dataUrl = await fileToDataUrl(imageFile);
+            await postClipboardRef.current({ kind: "image", dataUrl });
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Не удалось прочитать изображение");
+          }
+        })();
+        return;
+      }
+
+      const text = (cd.getData("text") ?? "").trim();
       if (!text) return;
 
       const hasProto = /^https?:\/\//i.test(text);
       const looksLikeUrl = hasProto || /^([\w-]+\.)+[\w]{2,}/i.test(text);
-      if (!looksLikeUrl) return;
+      if (looksLikeUrl) {
+        void onSubmitRef.current(hasProto ? text : `https://${text}`);
+        return;
+      }
 
-      void onSubmitRef.current(hasProto ? text : `https://${text}`);
+      e.preventDefault();
+      void postClipboardRef.current({ kind: "text", text });
     };
 
     document.addEventListener("paste", handlePaste);
