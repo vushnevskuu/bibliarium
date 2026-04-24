@@ -502,7 +502,6 @@ function TextClipEditorDialog({
   onSave: (text: string) => Promise<void>;
 }) {
   const [text, setText] = React.useState(initialText);
-  const [busy, setBusy] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -514,17 +513,15 @@ function TextClipEditorDialog({
     }
   }, [open, initialText]);
 
-  const runSave = async (value: string) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await onSave(value);
-      window.setTimeout(() => onClose(), 0);
-    } catch {
-      /* остаёмся в диалоге */
-    } finally {
-      setBusy(false);
-    }
+  const runSave = (value: string) => {
+    onClose();
+    void (async () => {
+      try {
+        await onSave(value);
+      } catch (e) {
+        console.error("[TextClipEditor] save failed", e);
+      }
+    })();
   };
 
   if (!mounted || typeof document === "undefined" || !open) return null;
@@ -560,8 +557,7 @@ function TextClipEditorDialog({
             value={text}
             onChange={(e) => setText(e.target.value)}
             maxLength={50_000}
-            disabled={busy}
-            className="min-h-[220px] w-full max-h-[min(65vh,560px)] flex-1 resize-y rounded-md border border-border bg-background px-3 py-2.5 font-sans text-sm leading-relaxed text-foreground outline-none focus:border-foreground/25 disabled:opacity-50"
+            className="min-h-[220px] w-full max-h-[min(65vh,560px)] flex-1 resize-y rounded-md border border-border bg-background px-3 py-2.5 font-sans text-sm leading-relaxed text-foreground outline-none focus:border-foreground/25"
             spellCheck
           />
         </div>
