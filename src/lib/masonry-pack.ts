@@ -97,6 +97,9 @@ function linkHeightTier(link: LinkSerialized): number {
     );
     return src ? 75 : 32;
   }
+  if (link.provider === "clipboard") {
+    return 52;
+  }
   if (link.provider === "image" && link.imageUrl) {
     return 58;
   }

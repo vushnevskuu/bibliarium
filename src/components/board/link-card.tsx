@@ -23,10 +23,22 @@ import { InstagramEmbedIframe } from "@/components/board/instagram-embed-iframe"
 import { WebPageIframe } from "@/components/board/web-page-iframe";
 import { TelegramLinkIcon } from "@/components/icons/telegram-link-icon";
 
+/** Сохранённая из буфера картинка: без ссылки и полоски, лайтбокс. */
+function isBoardImageOnlyCard(link: LinkSerialized): boolean {
+  return link.provider === "image" && Boolean(link.imageUrl);
+}
+
+/** Текст из буфера: виджет с полным текстом, без полоски «ссылки». */
+function isBoardClipboardTextCard(link: LinkSerialized): boolean {
+  return link.provider === "clipboard";
+}
+
 function showBoardLinkMetaStrip(
   link: LinkSerialized,
   isTelegramEmbed: boolean,
 ): boolean {
+  if (isBoardImageOnlyCard(link)) return false;
+  if (isBoardClipboardTextCard(link)) return false;
   if (isTelegramEmbed) return false;
   if (link.provider === "youtube") return false;
   if (link.provider === "twitter") return false;
@@ -164,11 +176,49 @@ function youtubePoster(embedUrl: string | null, pageUrl: string, fallback: strin
 function Media({
   link,
   telegramSrc,
+  onImagePreviewClick,
+  onClipboardTextClick,
 }: {
   link: LinkSerialized;
   telegramSrc: string | null;
+  /** Только для provider image: клик по превью открывает лайтбокс */
+  onImagePreviewClick?: () => void;
+  /** Текст из буфера: открыть редактор */
+  onClipboardTextClick?: () => void;
 }) {
   const { resolvedTheme } = useTheme();
+
+  if (link.provider === "clipboard") {
+    const display = (link.extractedText ?? link.description ?? "").trim();
+    const inner = (
+      <div
+        className="max-h-[min(60vh,420px)] min-h-[140px] overflow-y-auto overflow-x-hidden px-3.5 py-3 text-left [scrollbar-gutter:stable]"
+      >
+        {display ? (
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+            {display}
+          </p>
+        ) : (
+          <p className="text-sm italic text-muted-foreground">Пусто — нажмите, чтобы дописать</p>
+        )}
+      </div>
+    );
+    if (onClipboardTextClick) {
+      return (
+        <button
+          type="button"
+          className="w-full cursor-text border-0 bg-card p-0 text-left outline-none ring-0"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClipboardTextClick();
+          }}
+        >
+          {inner}
+        </button>
+      );
+    }
+    return <div className="w-full bg-card">{inner}</div>;
+  }
 
   if (link.provider === "youtube") {
     const shorts =
@@ -334,7 +384,15 @@ function Media({
 
   if (link.provider === "image" && link.imageUrl) {
     return (
-      <div className="relative w-full overflow-hidden bg-muted">
+      <button
+        type="button"
+        className="relative block w-full cursor-zoom-in overflow-hidden border-0 bg-muted p-0 text-left"
+        onClick={(e) => {
+          e.stopPropagation();
+          onImagePreviewClick?.();
+        }}
+        aria-label="Показать крупнее"
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={link.imageUrl}
@@ -342,9 +400,9 @@ function Media({
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          className="max-h-[320px] w-full object-cover"
+          className="pointer-events-none max-h-[320px] w-full object-cover"
         />
-      </div>
+      </button>
     );
   }
 
@@ -382,6 +440,134 @@ function Media({
         <Link2 className="h-10 w-10 text-muted-foreground/25" strokeWidth={1} aria-hidden />
       )}
     </div>
+  );
+}
+
+function ImageLightbox({
+  open,
+  src,
+  onClose,
+}: {
+  open: boolean;
+  src: string;
+  onClose: () => void;
+}) {
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => setMounted(true), []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  if (!mounted || typeof document === "undefined" || !open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[600] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Просмотр изображения"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt=""
+        className="max-h-[min(90dvh,1200px)] w-auto max-w-[min(95vw,1400px)] cursor-zoom-out object-contain"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+      />
+    </div>,
+    document.body
+  );
+}
+
+function TextClipEditorDialog({
+  open,
+  initialText,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  initialText: string;
+  onClose: () => void;
+  onSave: (text: string) => Promise<void>;
+}) {
+  const [text, setText] = React.useState(initialText);
+  const [busy, setBusy] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => setMounted(true), []);
+  React.useEffect(() => {
+    if (open) {
+      setText(initialText);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [open, initialText]);
+
+  const runSave = async (value: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onSave(value);
+      window.setTimeout(() => onClose(), 0);
+    } catch {
+      /* остаёмся в диалоге */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!mounted || typeof document === "undefined" || !open) return null;
+
+  return createPortal(
+    <>
+      <button
+        type="button"
+        aria-label="Сохранить и закрыть"
+        className="fixed inset-0 z-[501] bg-foreground/15"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void runSave(text);
+        }}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Редактирование заметки"
+        className="fixed left-1/2 top-1/2 z-[502] w-[min(92vw,560px)] max-h-[min(85vh,720px)] -translate-x-1/2 -translate-y-1/2"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex max-h-[min(85vh,720px)] flex-col overflow-hidden rounded-xl border border-border bg-card p-4 shadow-lg">
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            maxLength={50_000}
+            disabled={busy}
+            className="min-h-[220px] w-full max-h-[min(65vh,560px)] flex-1 resize-y rounded-md border border-border bg-background px-3 py-2.5 font-sans text-sm leading-relaxed text-foreground outline-none focus:border-foreground/25 disabled:opacity-50"
+            spellCheck
+          />
+        </div>
+      </div>
+    </>,
+    document.body
   );
 }
 
@@ -516,6 +702,11 @@ export function LinkCard({
   readOnly?: boolean;
 }) {
   const [noteOpen, setNoteOpen] = React.useState(false);
+  const [imageLightbox, setImageLightbox] = React.useState(false);
+  const [clipTextOpen, setClipTextOpen] = React.useState(false);
+
+  const isImageOnly = isBoardImageOnlyCard(link);
+  const isClipboardText = isBoardClipboardTextCard(link);
 
   const closeNoteEditor = React.useCallback(() => {
     setNoteOpen(false);
@@ -541,6 +732,17 @@ export function LinkCard({
     onPatched?.(data.link);
   };
 
+  const saveClipboardBody = async (raw: string) => {
+    const res = await fetch(`/api/links/${link.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ extractedText: raw.trim() === "" ? null : raw }),
+    });
+    if (!res.ok) throw new Error("Could not save text");
+    const data = (await res.json()) as { link: LinkSerialized };
+    onPatched?.(data.link);
+  };
+
   return (
     <article className="group w-full min-w-0">
       <div
@@ -552,16 +754,18 @@ export function LinkCard({
         {!readOnly && <div
           className="pointer-events-none absolute right-1 top-1 z-20 flex gap-0 rounded-md border border-border bg-background p-0.5 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
         >
-          <a
-            href={link.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Open in new tab"
-          >
-            <ExternalLink className="h-4 w-4" />
-          </a>
+          {!isImageOnly && !isClipboardText ? (
+            <a
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="Open in new tab"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          ) : null}
           <button
             type="button"
             onClick={(e) => {
@@ -603,7 +807,35 @@ export function LinkCard({
           />
         )}
 
-        <Media link={link} telegramSrc={telegramSrc} />
+        {!readOnly && isClipboardText && (
+          <TextClipEditorDialog
+            open={clipTextOpen}
+            initialText={link.extractedText ?? ""}
+            onClose={() => setClipTextOpen(false)}
+            onSave={saveClipboardBody}
+          />
+        )}
+
+        {isImageOnly && link.imageUrl ? (
+          <ImageLightbox
+            open={imageLightbox}
+            src={link.imageUrl}
+            onClose={() => setImageLightbox(false)}
+          />
+        ) : null}
+
+        <Media
+          link={link}
+          telegramSrc={telegramSrc}
+          onImagePreviewClick={
+            isImageOnly ? () => setImageLightbox(true) : undefined
+          }
+          onClipboardTextClick={
+            !readOnly && isClipboardText
+              ? () => setClipTextOpen(true)
+              : undefined
+          }
+        />
         {showBoardLinkMetaStrip(link, isTelegramEmbed) ? (
           <BoardLinkMetaStrip
             link={link}

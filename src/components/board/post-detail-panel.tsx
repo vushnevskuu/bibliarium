@@ -72,15 +72,17 @@ export function PostDetailPanel({
           {title}
         </h2>
         <div className="flex shrink-0 items-center gap-1">
-          <a
-            href={link.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground transition-colors hover:border-foreground/20"
-          >
-            <ExternalLink className="h-4 w-4 shrink-0" />
-            <span className="hidden sm:inline">Original</span>
-          </a>
+          {link.provider !== "clipboard" ? (
+            <a
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground transition-colors hover:border-foreground/20"
+            >
+              <ExternalLink className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">Original</span>
+            </a>
+          ) : null}
           <button
             type="button"
             onClick={() => setExpanded((e) => !e)}

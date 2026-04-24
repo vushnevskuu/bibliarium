@@ -33,6 +33,8 @@ export type LinkSerialized = {
   isPublic: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Полный извлечённый/вставленный текст (статьи, буфер «заметка») */
+  extractedText: string | null;
   /** Structured AI-readable profile when ingestion has run */
   aiProfile: AiLinkProfile | null;
 };

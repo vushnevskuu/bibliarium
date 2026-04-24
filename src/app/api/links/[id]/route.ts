@@ -4,6 +4,19 @@ import { prisma } from "@/lib/prisma";
 import { serializeLink } from "@/lib/serialize";
 import { patchLinkBodySchema } from "@/lib/validation";
 
+function clipTitleFromPastedText(text: string, max = 200): string {
+  const line = text.trim().split(/\r?\n/)[0] ?? "";
+  const t = line.trim();
+  if (!t) return "Заметка";
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+function clipDescFromPastedText(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  return t.length > 500 ? `${t.slice(0, 499)}…` : t;
+}
+
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: { id: string } };
@@ -55,7 +68,7 @@ export async function PATCH(request: Request, context: Ctx) {
     );
   }
 
-  const { collectionId, note, title, isPublic } = parsed.data;
+  const { collectionId, note, title, isPublic, extractedText } = parsed.data;
 
   const existing = await prisma.link.findFirst({
     where: { id, userId: ctx.appUser.id },
@@ -90,12 +103,40 @@ export async function PATCH(request: Request, context: Ctx) {
       ? (title === null ? null : (title.trim() || null))
       : undefined;
 
+    const clipboardBodyUpdate =
+      extractedText !== undefined && existing.provider === "clipboard"
+        ? (() => {
+            const raw = extractedText === null ? "" : String(extractedText);
+            const body = raw.replace(/\0/g, "").trim();
+            if (!body) {
+              return {
+                extractedText: null as string | null,
+                title: "Заметка" as string,
+                description: null as string | null,
+              };
+            }
+            return {
+              extractedText: body,
+              title: clipTitleFromPastedText(body),
+              description: clipDescFromPastedText(body),
+            };
+          })()
+        : null;
+
     const link = await prisma.link.update({
       where: { id },
       data: {
         ...(collectionId !== undefined ? { collectionId } : {}),
         ...(note !== undefined ? { note: noteUpdate } : {}),
-        ...(title !== undefined ? { title: titleUpdate } : {}),
+        ...(clipboardBodyUpdate
+          ? {
+              extractedText: clipboardBodyUpdate.extractedText,
+              title: clipboardBodyUpdate.title,
+              description: clipboardBodyUpdate.description,
+            }
+          : title !== undefined
+            ? { title: titleUpdate }
+            : {}),
         ...(isPublic !== undefined ? { isPublic } : {}),
       },
     });

@@ -13,6 +13,12 @@ export const patchLinkBodySchema = z.object({
     .optional()
     .nullable(),
   title: z.string().max(500).optional().nullable(),
+  /** Текст карточки «заметка из буфера» (provider clipboard) */
+  extractedText: z
+    .string()
+    .max(50_000, "Text must be at most 50000 characters")
+    .optional()
+    .nullable(),
   isPublic: z.boolean().optional(),
 });
 

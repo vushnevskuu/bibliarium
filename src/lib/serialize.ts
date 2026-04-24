@@ -53,6 +53,7 @@ export function serializeLink(link: Link): LinkSerialized {
     isPublic: link.isPublic,
     createdAt: link.createdAt.toISOString(),
     updatedAt: link.updatedAt.toISOString(),
+    extractedText: link.extractedText,
     aiProfile: parseAiProfileJson(link.aiProfileJson),
   };
 }

@@ -26,6 +26,21 @@ export function PostDetailPreview({
   twitterSrc: string | null;
   telegramSrc: string | null;
 }) {
+  if (link.provider === "clipboard") {
+    const t = (link.extractedText ?? link.description ?? "").trim();
+    return (
+      <div className="max-h-[min(70vh,640px)] overflow-y-auto rounded-md border border-border bg-muted/20 px-4 py-3">
+        {t ? (
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+            {t}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">Пусто</p>
+        )}
+      </div>
+    );
+  }
+
   if (link.provider === "youtube") {
     const ytSrc = youtubeModalEmbedSrc(link);
     if (ytSrc) {
