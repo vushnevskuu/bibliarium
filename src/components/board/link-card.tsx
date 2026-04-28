@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import * as React from "react";
 import { createPortal } from "react-dom";
 import {
@@ -16,12 +17,60 @@ import {
   resolveTelegramEmbedUrl,
   resolveTwitterEmbedSrc,
 } from "@/lib/url-parse";
-import { TelegramEmbedIframe } from "@/components/board/telegram-embed-iframe";
-import { TwitterEmbedIframe } from "@/components/board/twitter-embed-iframe";
-import { InstagramEmbedIframe } from "@/components/board/instagram-embed-iframe";
-import { WebPageIframe } from "@/components/board/web-page-iframe";
 import { TelegramLinkIcon } from "@/components/icons/telegram-link-icon";
 import { LazyInView } from "@/components/board/lazy-in-view";
+
+const TelegramEmbedIframe = dynamic(
+  () =>
+    import("@/components/board/telegram-embed-iframe").then(
+      (m) => m.TelegramEmbedIframe,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="min-h-[200px] w-full bg-muted/40" aria-hidden />
+    ),
+  },
+);
+
+const TwitterEmbedIframe = dynamic(
+  () =>
+    import("@/components/board/twitter-embed-iframe").then(
+      (m) => m.TwitterEmbedIframe,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="min-h-[200px] w-full bg-muted/30" aria-hidden />
+    ),
+  },
+);
+
+const InstagramEmbedIframe = dynamic(
+  () =>
+    import("@/components/board/instagram-embed-iframe").then(
+      (m) => m.InstagramEmbedIframe,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[560px] w-full bg-muted/50" aria-hidden />
+    ),
+  },
+);
+
+const WebPageIframe = dynamic(
+  () =>
+    import("@/components/board/web-page-iframe").then(
+      (m) => m.WebPageIframe,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[440px] w-full bg-muted/50" aria-hidden />
+    ),
+  },
+);
 
 /** Сохранённая из буфера картинка: без ссылки и полоски, лайтбокс. */
 function isBoardImageOnlyCard(link: LinkSerialized): boolean {
@@ -787,7 +836,7 @@ function LinkCardInner({
     <article className="group w-full min-w-0">
       <div
         className={cn(
-          "relative rounded-2xl border border-border bg-card overflow-clip",
+          "relative overflow-clip rounded-2xl border border-border bg-card [contain:layout]",
           isTelegramEmbed && "[backface-visibility:hidden]"
         )}
       >

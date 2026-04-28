@@ -468,6 +468,36 @@ export function LinkBoard({
     [onDeleteById, onPatchedLink, embedIsDark]
   );
 
+  const masonryColumns = React.useMemo(() => {
+    const items: React.ReactNode[] =
+      loadingList && links.length === 0
+        ? Array.from({ length: 6 }, (_, i) => (
+            <CardSkeleton key={`ls-${i}`} />
+          ))
+        : [
+            ...(busy && skeletonCount > 0
+              ? Array.from({ length: skeletonCount }, (_, i) => (
+                  <CardSkeleton key={`skm-${i}`} />
+                ))
+              : []),
+            ...links.map((link) => (
+              <LinkCard key={link.id} {...cardProps(link)} />
+            )),
+          ];
+
+    if (items.length === 0) return null;
+
+    const columns: React.ReactNode[][] = Array.from({ length: numCols }, () => []);
+    items.forEach((item, i) => {
+      columns[i % numCols]?.push(item);
+    });
+
+    return columns.map((col, ci) => (
+      <div key={ci} className="flex min-w-0 flex-1 flex-col gap-5">
+        {col}
+      </div>
+    ));
+  }, [links, loadingList, busy, skeletonCount, numCols, cardProps]);
 
   const saveOpenaiKey = async (key: string | null) => {
     setOpenaiSaving(true);
@@ -663,31 +693,7 @@ export function LinkBoard({
 
         {/* Masonry container — always mounted so ResizeObserver can measure */}
         <div ref={gridRef} className="flex items-start gap-5">
-          {(() => {
-            // Build flat item list: loading skeletons OR (add-skeleton + cards)
-            const items: React.ReactNode[] = loadingList && links.length === 0
-              ? Array.from({ length: 6 }, (_, i) => <CardSkeleton key={`ls-${i}`} />)
-              : [
-                  ...(busy && skeletonCount > 0
-                    ? Array.from({ length: skeletonCount }, (_, i) => <CardSkeleton key={`skm-${i}`} />)
-                    : []),
-                  ...links.map((link) => (
-                    <LinkCard key={link.id} {...cardProps(link)} />
-                  )),
-                ];
-
-            if (items.length === 0) return null;
-
-            // Distribute round-robin across columns
-            const columns: React.ReactNode[][] = Array.from({ length: numCols }, () => []);
-            items.forEach((item, i) => columns[i % numCols].push(item));
-
-            return columns.map((col, ci) => (
-              <div key={ci} className="flex flex-1 flex-col gap-5 min-w-0">
-                {col}
-              </div>
-            ));
-          })()}
+          {masonryColumns}
         </div>
 
         {/* Empty state — outside masonry so it can be fixed-centered */}

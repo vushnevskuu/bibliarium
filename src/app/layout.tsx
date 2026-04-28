@@ -50,7 +50,9 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} min-h-screen font-sans`}>
+      <body
+        className={`${inter.variable} min-h-screen font-sans overscroll-y-contain`}
+      >
         {supabaseBootstrap ? (
           <script
             // Публичные ключи; без этого клиентский бандл не видит env, заданные только на Vercel после билда

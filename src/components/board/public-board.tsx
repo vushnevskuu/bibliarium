@@ -49,19 +49,27 @@ export function PublicBoard({
   const gridRef = React.useRef<HTMLDivElement>(null);
   const numCols = useMasonryCols(gridRef);
 
-  const items: React.ReactNode[] = links.map((link) => (
-    <LinkCard
-      key={link.id}
-      link={link}
-      embedIsDark={embedIsDark}
-      onOpen={noopOpen}
-      onDelete={noopDelete}
-      readOnly
-    />
-  ));
-
-  const columns: React.ReactNode[][] = Array.from({ length: numCols }, () => []);
-  items.forEach((item, i) => columns[i % numCols].push(item));
+  const masonryColumns = React.useMemo(() => {
+    const items: React.ReactNode[] = links.map((link) => (
+      <LinkCard
+        key={link.id}
+        link={link}
+        embedIsDark={embedIsDark}
+        onOpen={noopOpen}
+        onDelete={noopDelete}
+        readOnly
+      />
+    ));
+    const columns: React.ReactNode[][] = Array.from({ length: numCols }, () => []);
+    items.forEach((item, i) => {
+      columns[i % numCols]?.push(item);
+    });
+    return columns.map((col, ci) => (
+      <div key={ci} className="flex min-w-0 flex-1 flex-col gap-5">
+        {col}
+      </div>
+    ));
+  }, [links, numCols, embedIsDark]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -75,11 +83,7 @@ export function PublicBoard({
 
         {/* Masonry grid */}
         <div ref={gridRef} className={links.length === 0 ? "hidden" : "flex items-start gap-5"}>
-          {columns.map((col, ci) => (
-            <div key={ci} className="flex flex-1 flex-col gap-5 min-w-0">
-              {col}
-            </div>
-          ))}
+          {masonryColumns}
         </div>
         {links.length === 0 && (
           <p className="text-center text-sm text-muted-foreground">No links yet.</p>
