@@ -8,7 +8,6 @@ import {
   StickyNote,
   Trash2,
 } from "lucide-react";
-import { useTheme } from "next-themes";
 import type { LinkSerialized } from "@/types/link";
 import { cn } from "@/lib/utils";
 import {
@@ -177,18 +176,19 @@ function youtubePoster(embedUrl: string | null, pageUrl: string, fallback: strin
 function Media({
   link,
   telegramSrc,
+  embedIsDark,
   onImagePreviewClick,
   onClipboardTextClick,
 }: {
   link: LinkSerialized;
   telegramSrc: string | null;
+  /** Тема для X-embed (без useTheme в каждой карточке) */
+  embedIsDark: boolean;
   /** Только для provider image: клик по превью открывает лайтбокс */
   onImagePreviewClick?: () => void;
   /** Текст из буфера: открыть редактор */
   onClipboardTextClick?: () => void;
 }) {
-  const { resolvedTheme } = useTheme();
-
   if (link.provider === "clipboard") {
     const display = (link.extractedText ?? link.description ?? "").trim();
     const inner = (
@@ -329,7 +329,7 @@ function Media({
   }
 
   if (link.provider === "twitter") {
-    const theme = resolvedTheme === "dark" ? "dark" : "light";
+    const theme = embedIsDark ? "dark" : "light";
     const iframeSrc = resolveTwitterEmbedSrc(
       link.url,
       link.embedHtml,
@@ -733,6 +733,7 @@ function LinkCardInner({
   onPatched,
   onNoteEditorClose,
   readOnly = false,
+  embedIsDark,
 }: {
   link: LinkSerialized;
   onOpen: () => void;
@@ -741,6 +742,8 @@ function LinkCardInner({
   onPatched?: (link: LinkSerialized) => void;
   onNoteEditorClose?: () => void;
   readOnly?: boolean;
+  /** Из доски: одна подписка на тему на страницу */
+  embedIsDark: boolean;
 }) {
   const [noteOpen, setNoteOpen] = React.useState(false);
   const [imageLightbox, setImageLightbox] = React.useState(false);
@@ -754,11 +757,7 @@ function LinkCardInner({
     onNoteEditorClose?.();
   }, [onNoteEditorClose]);
 
-  const { resolvedTheme } = useTheme();
-  const telegramSrc = resolveTelegramEmbedUrl(
-    link,
-    resolvedTheme === "dark"
-  );
+  const telegramSrc = resolveTelegramEmbedUrl(link, embedIsDark);
   const isTelegramEmbed = Boolean(telegramSrc);
 
   const saveNote = async (raw: string) => {
@@ -785,7 +784,7 @@ function LinkCardInner({
   };
 
   return (
-    <article className="group w-full min-w-0 [contain:paint]">
+    <article className="group w-full min-w-0">
       <div
         className={cn(
           "relative rounded-2xl border border-border bg-card overflow-clip",
@@ -868,6 +867,7 @@ function LinkCardInner({
         <Media
           link={link}
           telegramSrc={telegramSrc}
+          embedIsDark={embedIsDark}
           onImagePreviewClick={
             isImageOnly ? () => setImageLightbox(true) : undefined
           }
@@ -924,6 +924,7 @@ function linkCardMemoCompare(
   return (
     prev.link === next.link &&
     prev.readOnly === next.readOnly &&
+    prev.embedIsDark === next.embedIsDark &&
     prev.onDelete === next.onDelete &&
     prev.onPatched === next.onPatched &&
     prev.onOpen === next.onOpen &&

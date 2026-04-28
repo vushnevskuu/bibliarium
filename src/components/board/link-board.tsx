@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import type { LinkSerialized } from "@/types/link";
@@ -18,17 +19,25 @@ function useMasonryCols(
   gap = 20,
 ) {
   const [cols, setCols] = React.useState(1);
+  const rafRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const measure = () => {
-      const n = Math.max(1, Math.floor((el.offsetWidth + gap) / (minColWidth + gap)));
-      setCols(n);
+    const schedule = () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const n = Math.max(1, Math.floor((el.offsetWidth + gap) / (minColWidth + gap)));
+        setCols(n);
+      });
     };
-    measure();
-    const ro = new ResizeObserver(measure);
+    schedule();
+    const ro = new ResizeObserver(schedule);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
   }, [containerRef, minColWidth, gap]);
   return cols;
 }
@@ -130,6 +139,8 @@ export function LinkBoard({
   hasOpenaiKey?: boolean;
 }) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
+  const embedIsDark = resolvedTheme === "dark";
   const { order: shuffleOrder, onEnter: shuffleEnter, onLeave: shuffleLeave } = useSlideLetters();
   const gridRef = React.useRef<HTMLDivElement>(null);
   const numCols = useMasonryCols(gridRef);
@@ -452,8 +463,9 @@ export function LinkBoard({
       onOpen: () => { /* card click disabled */ },
       onDelete: onDeleteById,
       onPatched: onPatchedLink,
+      embedIsDark,
     }),
-    [onDeleteById, onPatchedLink]
+    [onDeleteById, onPatchedLink, embedIsDark]
   );
 
 
@@ -639,12 +651,9 @@ export function LinkBoard({
               >
                 <span className="inline-flex">
                   {shuffleOrder.map((charIdx) => (
-                    <motion.span
-                      key={charIdx}
-                      transition={{ type: "spring", stiffness: 90, damping: 18 }}
-                    >
+                    <span key={charIdx} className="inline-block">
                       {SHUFFLE_WORD[charIdx]}
-                    </motion.span>
+                    </span>
                   ))}
                 </span>
               </button>

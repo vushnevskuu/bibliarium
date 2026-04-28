@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTheme } from "next-themes";
 import type { LinkSerialized } from "@/types/link";
 import { LinkCard } from "./link-card";
 
@@ -10,17 +11,25 @@ function useMasonryCols(
   gap = 20,
 ) {
   const [cols, setCols] = React.useState(3);
+  const rafRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const measure = () => {
-      const n = Math.max(1, Math.floor((el.offsetWidth + gap) / (minColWidth + gap)));
-      setCols(n);
+    const schedule = () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const n = Math.max(1, Math.floor((el.offsetWidth + gap) / (minColWidth + gap)));
+        setCols(n);
+      });
     };
-    measure();
-    const ro = new ResizeObserver(measure);
+    schedule();
+    const ro = new ResizeObserver(schedule);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
   }, [containerRef, minColWidth, gap]);
   return cols;
 }
@@ -35,6 +44,8 @@ export function PublicBoard({
   handle: string;
   links: LinkSerialized[];
 }) {
+  const { resolvedTheme } = useTheme();
+  const embedIsDark = resolvedTheme === "dark";
   const gridRef = React.useRef<HTMLDivElement>(null);
   const numCols = useMasonryCols(gridRef);
 
@@ -42,6 +53,7 @@ export function PublicBoard({
     <LinkCard
       key={link.id}
       link={link}
+      embedIsDark={embedIsDark}
       onOpen={noopOpen}
       onDelete={noopDelete}
       readOnly

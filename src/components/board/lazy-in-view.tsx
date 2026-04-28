@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { startTransition } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -31,7 +32,8 @@ export function LazyInView({
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) {
-          setShow(true);
+          /* Не блокируем скролл: монтирование iframe — низкий приоритет */
+          startTransition(() => setShow(true));
         }
       },
       { root: null, rootMargin, threshold: 0 },
