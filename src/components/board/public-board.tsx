@@ -3,8 +3,6 @@
 import * as React from "react";
 import type { LinkSerialized } from "@/types/link";
 import { LinkCard } from "./link-card";
-import { VirtualMasonryColumns } from "@/components/board/virtual-masonry-columns";
-import type { MasonryFlatItem } from "@/components/board/masonry-height-estimate";
 
 function useMasonryCols(
   containerRef: React.RefObject<HTMLDivElement>,
@@ -39,25 +37,18 @@ export function PublicBoard({
   const gridRef = React.useRef<HTMLDivElement>(null);
   const numCols = useMasonryCols(gridRef);
 
-  const masonryItems = React.useMemo(
-    (): MasonryFlatItem[] =>
-      links.map((link) => ({ kind: "link" as const, link })),
-    [links]
-  );
+  const items: React.ReactNode[] = links.map((link) => (
+    <LinkCard
+      key={link.id}
+      link={link}
+      onOpen={noop}
+      onDelete={noop}
+      readOnly
+    />
+  ));
 
-  const renderPublicItem = React.useCallback((item: MasonryFlatItem) => {
-    if (item.kind !== "link") {
-      return <div className="h-px w-full shrink-0" aria-hidden />;
-    }
-    return (
-      <LinkCard
-        link={item.link}
-        onOpen={noop}
-        onDelete={noop}
-        readOnly
-      />
-    );
-  }, []);
+  const columns: React.ReactNode[][] = Array.from({ length: numCols }, () => []);
+  items.forEach((item, i) => columns[i % numCols].push(item));
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -70,16 +61,12 @@ export function PublicBoard({
         </div>
 
         {/* Masonry grid */}
-        <div
-          ref={gridRef}
-          className={links.length === 0 ? "hidden" : "flex items-start gap-5"}
-        >
-          <VirtualMasonryColumns
-            gridRef={gridRef}
-            items={masonryItems}
-            numCols={numCols}
-            renderItem={renderPublicItem}
-          />
+        <div ref={gridRef} className={links.length === 0 ? "hidden" : "flex items-start gap-5"}>
+          {columns.map((col, ci) => (
+            <div key={ci} className="flex flex-1 flex-col gap-5 min-w-0">
+              {col}
+            </div>
+          ))}
         </div>
         {links.length === 0 && (
           <p className="text-center text-sm text-muted-foreground">No links yet.</p>

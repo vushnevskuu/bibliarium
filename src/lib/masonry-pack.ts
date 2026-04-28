@@ -70,7 +70,7 @@ export function distributeByWeight(
 }
 
 /** Грубые «этажи» высоты: чем больше, тем выше карточка в среднем. */
-export function linkHeightTier(link: LinkSerialized): number {
+function linkHeightTier(link: LinkSerialized): number {
   if (link.provider === "youtube") {
     const shorts =
       isYoutubeShortsUrl(link.url) ||

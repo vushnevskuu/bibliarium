@@ -10,8 +10,6 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { LinkCard } from "./link-card";
 import { EmptyState } from "./empty-state";
 import { CardSkeleton } from "./card-skeleton";
-import { VirtualMasonryColumns } from "@/components/board/virtual-masonry-columns";
-import type { MasonryFlatItem } from "@/components/board/masonry-height-estimate";
 
 /** Measures how many columns fit in the container and updates on resize. */
 function useMasonryCols(
@@ -430,7 +428,7 @@ export function LinkBoard({
     return () => document.removeEventListener("paste", handlePaste);
   }, []);
 
-  const onDelete = React.useCallback(async (id: string) => {
+  const onDelete = async (id: string) => {
     setLinks((prev) => prev.filter((l) => l.id !== id));
     try {
       const res = await fetch(`/api/links/${id}`, { method: "DELETE" });
@@ -440,49 +438,18 @@ export function LinkBoard({
     } catch {
       void refreshLinks();
     }
-  }, [refreshLinks]);
+  };
 
-  const cardProps = React.useCallback(
-    (link: LinkSerialized) => ({
-      link,
-      onOpen: () => { /* card click disabled */ },
-      onDelete: () => void onDelete(link.id),
-      onPatched: (updated: LinkSerialized) => {
-        setLinks((prev) =>
-          prev.map((l) => (l.id === updated.id ? updated : l))
-        );
-      },
-    }),
-    [onDelete]
-  );
-
-  const masonryItems = React.useMemo((): MasonryFlatItem[] => {
-    if (loadingList && links.length === 0) {
-      return Array.from({ length: 6 }, (_, i) => ({
-        kind: "skeleton" as const,
-        id: `ls-${i}`,
-      }));
-    }
-    return [
-      ...(busy && skeletonCount > 0
-        ? Array.from({ length: skeletonCount }, (_, i) => ({
-            kind: "skeleton" as const,
-            id: `skm-${i}`,
-          }))
-        : []),
-      ...links.map((link) => ({ kind: "link" as const, link })),
-    ];
-  }, [loadingList, busy, skeletonCount, links]);
-
-  const renderMasonryItem = React.useCallback(
-    (item: MasonryFlatItem) => {
-      if (item.kind === "skeleton") {
-        return <CardSkeleton />;
-      }
-      return <LinkCard {...cardProps(item.link)} />;
+  const cardProps = (link: LinkSerialized) => ({
+    link,
+    onOpen: () => { /* card click disabled */ },
+    onDelete: () => void onDelete(link.id),
+    onPatched: (updated: LinkSerialized) => {
+      setLinks((prev) =>
+        prev.map((l) => (l.id === updated.id ? updated : l))
+      );
     },
-    [cardProps]
-  );
+  });
 
 
   const saveOpenaiKey = async (key: string | null) => {
@@ -681,14 +648,33 @@ export function LinkBoard({
           </div>
         </div>
 
-        {/* Masonry: только видимые карточки в DOM (TanStack Virtual window) */}
+        {/* Masonry container — always mounted so ResizeObserver can measure */}
         <div ref={gridRef} className="flex items-start gap-5">
-          <VirtualMasonryColumns
-            gridRef={gridRef}
-            items={masonryItems}
-            numCols={numCols}
-            renderItem={renderMasonryItem}
-          />
+          {(() => {
+            // Build flat item list: loading skeletons OR (add-skeleton + cards)
+            const items: React.ReactNode[] = loadingList && links.length === 0
+              ? Array.from({ length: 6 }, (_, i) => <CardSkeleton key={`ls-${i}`} />)
+              : [
+                  ...(busy && skeletonCount > 0
+                    ? Array.from({ length: skeletonCount }, (_, i) => <CardSkeleton key={`skm-${i}`} />)
+                    : []),
+                  ...links.map((link) => (
+                    <LinkCard key={link.id} {...cardProps(link)} />
+                  )),
+                ];
+
+            if (items.length === 0) return null;
+
+            // Distribute round-robin across columns
+            const columns: React.ReactNode[][] = Array.from({ length: numCols }, () => []);
+            items.forEach((item, i) => columns[i % numCols].push(item));
+
+            return columns.map((col, ci) => (
+              <div key={ci} className="flex flex-1 flex-col gap-5 min-w-0">
+                {col}
+              </div>
+            ));
+          })()}
         </div>
 
         {/* Empty state — outside masonry so it can be fixed-centered */}
