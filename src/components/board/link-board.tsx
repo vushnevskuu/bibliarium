@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import type { LinkSerialized } from "@/types/link";
 import { cn } from "@/lib/utils";
@@ -679,13 +679,20 @@ export function LinkBoard({
                   "disabled:pointer-events-none disabled:opacity-30"
                 )}
               >
-                <span className="inline-flex">
-                  {shuffleOrder.map((charIdx) => (
-                    <span key={charIdx} className="inline-block">
-                      {SHUFFLE_WORD[charIdx]}
-                    </span>
-                  ))}
-                </span>
+                <LayoutGroup id="board-shuffle-word">
+                  <span className="inline-flex">
+                    {shuffleOrder.map((charIdx) => (
+                      <motion.span
+                        key={charIdx}
+                        layout
+                        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                        className="inline-block"
+                      >
+                        {SHUFFLE_WORD[charIdx]}
+                      </motion.span>
+                    ))}
+                  </span>
+                </LayoutGroup>
               </button>
             </div>
           </div>
