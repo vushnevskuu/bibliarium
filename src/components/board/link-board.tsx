@@ -428,7 +428,7 @@ export function LinkBoard({
     return () => document.removeEventListener("paste", handlePaste);
   }, []);
 
-  const onDelete = async (id: string) => {
+  const onDeleteById = React.useCallback(async (id: string) => {
     setLinks((prev) => prev.filter((l) => l.id !== id));
     try {
       const res = await fetch(`/api/links/${id}`, { method: "DELETE" });
@@ -438,18 +438,23 @@ export function LinkBoard({
     } catch {
       void refreshLinks();
     }
-  };
+  }, [refreshLinks]);
 
-  const cardProps = (link: LinkSerialized) => ({
-    link,
-    onOpen: () => { /* card click disabled */ },
-    onDelete: () => void onDelete(link.id),
-    onPatched: (updated: LinkSerialized) => {
-      setLinks((prev) =>
-        prev.map((l) => (l.id === updated.id ? updated : l))
-      );
-    },
-  });
+  const onPatchedLink = React.useCallback((updated: LinkSerialized) => {
+    setLinks((prev) =>
+      prev.map((l) => (l.id === updated.id ? updated : l))
+    );
+  }, []);
+
+  const cardProps = React.useCallback(
+    (link: LinkSerialized) => ({
+      link,
+      onOpen: () => { /* card click disabled */ },
+      onDelete: onDeleteById,
+      onPatched: onPatchedLink,
+    }),
+    [onDeleteById, onPatchedLink]
+  );
 
 
   const saveOpenaiKey = async (key: string | null) => {
@@ -636,7 +641,6 @@ export function LinkBoard({
                   {shuffleOrder.map((charIdx) => (
                     <motion.span
                       key={charIdx}
-                      layout
                       transition={{ type: "spring", stiffness: 90, damping: 18 }}
                     >
                       {SHUFFLE_WORD[charIdx]}

@@ -25,7 +25,8 @@ function useMasonryCols(
   return cols;
 }
 
-const noop = () => {};
+const noopOpen = () => {};
+const noopDelete: (id: string) => void = () => {};
 
 export function PublicBoard({
   handle,
@@ -41,8 +42,8 @@ export function PublicBoard({
     <LinkCard
       key={link.id}
       link={link}
-      onOpen={noop}
-      onDelete={noop}
+      onOpen={noopOpen}
+      onDelete={noopDelete}
       readOnly
     />
   ));

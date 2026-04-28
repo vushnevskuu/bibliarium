@@ -22,6 +22,7 @@ import { TwitterEmbedIframe } from "@/components/board/twitter-embed-iframe";
 import { InstagramEmbedIframe } from "@/components/board/instagram-embed-iframe";
 import { WebPageIframe } from "@/components/board/web-page-iframe";
 import { TelegramLinkIcon } from "@/components/icons/telegram-link-icon";
+import { LazyInView } from "@/components/board/lazy-in-view";
 
 /** Сохранённая из буфера картинка: без ссылки и полоски, лайтбокс. */
 function isBoardImageOnlyCard(link: LinkSerialized): boolean {
@@ -225,11 +226,11 @@ function Media({
       isYoutubeShortsUrl(link.url) || isYoutubeShortsUrl(link.normalizedUrl);
     const iframeSrc = youtubeIframeSrc(link);
     if (iframeSrc) {
-      return (
+      const inner = (
         <div
           className={cn(
             "relative w-full overflow-hidden bg-black",
-            shorts ? "aspect-[9/16]" : "aspect-video"
+            shorts ? "aspect-[9/16]" : "aspect-video",
           )}
         >
           <iframe
@@ -242,6 +243,22 @@ function Media({
             referrerPolicy="strict-origin-when-cross-origin"
           />
         </div>
+      );
+      return (
+        <LazyInView
+          className="w-full"
+          placeholder={
+            <div
+              className={cn(
+                "w-full bg-black",
+                shorts ? "aspect-[9/16]" : "aspect-video",
+              )}
+              aria-hidden
+            />
+          }
+        >
+          {inner}
+        </LazyInView>
       );
     }
     const poster = youtubePoster(link.embedUrl, link.url, link.imageUrl);
@@ -269,10 +286,16 @@ function Media({
 
   if (telegramSrc) {
     return (
-      <TelegramEmbedIframe
-        src={telegramSrc}
-        title={link.title || "Telegram"}
-      />
+      <LazyInView
+        placeholder={
+          <div className="min-h-[200px] w-full bg-muted/40" aria-hidden />
+        }
+      >
+        <TelegramEmbedIframe
+          src={telegramSrc}
+          title={link.title || "Telegram"}
+        />
+      </LazyInView>
     );
   }
 
@@ -314,10 +337,16 @@ function Media({
     );
     if (iframeSrc) {
       return (
-        <TwitterEmbedIframe
-          src={iframeSrc}
-          title={link.title || "Post on X"}
-        />
+        <LazyInView
+          placeholder={
+            <div className="min-h-[200px] w-full bg-muted/30" aria-hidden />
+          }
+        >
+          <TwitterEmbedIframe
+            src={iframeSrc}
+            title={link.title || "Post on X"}
+          />
+        </LazyInView>
       );
     }
     return (
@@ -365,20 +394,35 @@ function Media({
 
   if (link.provider === "instagram" && link.embedUrl) {
     return (
-      <InstagramEmbedIframe
-        src={link.embedUrl}
-        title={link.title || "Post on Instagram"}
-      />
+      <LazyInView
+        placeholder={
+          <div
+            className="h-[560px] w-full bg-muted/50"
+            aria-hidden
+          />
+        }
+      >
+        <InstagramEmbedIframe
+          src={link.embedUrl}
+          title={link.title || "Post on Instagram"}
+        />
+      </LazyInView>
     );
   }
 
   // Web / article: live iframe if server confirmed embedding is allowed
   if ((link.provider === "web" || link.provider === "article") && link.embedUrl) {
     return (
-      <WebPageIframe
-        src={link.embedUrl}
-        title={link.title || link.domain}
-      />
+      <LazyInView
+        placeholder={
+          <div className="h-[440px] w-full bg-muted/50" aria-hidden />
+        }
+      >
+        <WebPageIframe
+          src={link.embedUrl}
+          title={link.title || link.domain}
+        />
+      </LazyInView>
     );
   }
 
@@ -681,7 +725,7 @@ function NoteEditorDialog({
   );
 }
 
-export function LinkCard({
+function LinkCardInner({
   link,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onOpen: _onOpen,
@@ -692,7 +736,8 @@ export function LinkCard({
 }: {
   link: LinkSerialized;
   onOpen: () => void;
-  onDelete: () => void;
+  /** Стабильный колбэк: по id карточки */
+  onDelete: (id: string) => void | Promise<void>;
   onPatched?: (link: LinkSerialized) => void;
   onNoteEditorClose?: () => void;
   readOnly?: boolean;
@@ -740,7 +785,7 @@ export function LinkCard({
   };
 
   return (
-    <article className="group w-full min-w-0">
+    <article className="group w-full min-w-0 [contain:paint]">
       <div
         className={cn(
           "relative rounded-2xl border border-border bg-card overflow-clip",
@@ -785,7 +830,7 @@ export function LinkCard({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onDelete();
+              void onDelete(link.id);
             }}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
             aria-label="Remove card"
@@ -871,3 +916,21 @@ export function LinkCard({
     </article>
   );
 }
+
+function linkCardMemoCompare(
+  prev: React.ComponentProps<typeof LinkCardInner>,
+  next: React.ComponentProps<typeof LinkCardInner>
+) {
+  return (
+    prev.link === next.link &&
+    prev.readOnly === next.readOnly &&
+    prev.onDelete === next.onDelete &&
+    prev.onPatched === next.onPatched &&
+    prev.onOpen === next.onOpen &&
+    prev.onNoteEditorClose === next.onNoteEditorClose
+  );
+}
+
+LinkCardInner.displayName = "LinkCard";
+
+export const LinkCard = React.memo(LinkCardInner, linkCardMemoCompare);
