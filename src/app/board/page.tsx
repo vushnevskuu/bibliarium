@@ -36,22 +36,12 @@ export default async function BoardPage() {
       orderBy: [{ sortOrder: "desc" }, { createdAt: "desc" }],
     });
 
-    // Safe — column may not exist yet if migration hasn't run
-    let hasOpenaiKey = false;
-    try {
-      const userRecord = await prisma.user.findUnique({
-        where: { id: ctx.appUser.id },
-        select: { openaiApiKey: true },
-      });
-      hasOpenaiKey = Boolean(userRecord?.openaiApiKey);
-    } catch { /* migration pending */ }
-
     return (
       <LinkBoard
         initialLinks={links.map(serializeLink)}
         currentSlug={ctx.appUser.slug}
         currentEmail={ctx.appUser.email}
-        hasOpenaiKey={hasOpenaiKey}
+        hasOpenaiKey={Boolean(ctx.appUser.openaiApiKey)}
       />
     );
   } catch (e) {

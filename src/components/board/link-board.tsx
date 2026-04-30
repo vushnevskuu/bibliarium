@@ -11,36 +11,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { LinkCard } from "./link-card";
 import { EmptyState } from "./empty-state";
 import { CardSkeleton } from "./card-skeleton";
-
-/** Measures how many columns fit in the container and updates on resize. */
-function useMasonryCols(
-  containerRef: React.RefObject<HTMLDivElement>,
-  minColWidth = 300,
-  gap = 20,
-) {
-  const [cols, setCols] = React.useState(1);
-  const rafRef = React.useRef<number | null>(null);
-  React.useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const schedule = () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null;
-        const n = Math.max(1, Math.floor((el.offsetWidth + gap) / (minColWidth + gap)));
-        setCols(n);
-      });
-    };
-    schedule();
-    const ro = new ResizeObserver(schedule);
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-    };
-  }, [containerRef, minColWidth, gap]);
-  return cols;
-}
+import { useMasonryCols } from "./use-masonry-cols";
 
 const SHUFFLE_WORD = "shuffle";
 const SHUFFLE_N = SHUFFLE_WORD.length;
